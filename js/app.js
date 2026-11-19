@@ -34,10 +34,11 @@
     if (solved) { solved = false; typingStop = null; }
     errLine = 0; refreshGutter(); store.set(codeKey(), ta.value);
   });
-  // Λειτουργία καθηγητή: ?teacher=1 στη διεύθυνση ή Ctrl+Shift+L — επιτρέπει επικόλληση, δείχνει «Φόρτωσε λύση»
+  // Λειτουργία καθηγητή: ?teacher=1 στη διεύθυνση, διπλό κλικ στο «ROBOTONIO · UML» ή Ctrl+Shift+L — επιτρέπει επικόλληση, δείχνει «Φόρτωσε λύση»
   let teacher = new URLSearchParams(location.search).has("teacher");
-  function setTeacher(on) { teacher = on; $("btn-solution").hidden = !on; if (on) toast("Λειτουργία καθηγητή: επικόλληση ενεργή"); }
-  document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); setTeacher(!teacher); } });
+  function setTeacher(on, quiet) { teacher = on; $("btn-solution").hidden = !on; if (!quiet) toast(on ? "Λειτουργία καθηγητή: επικόλληση ενεργή" : "Λειτουργία μαθητή"); }
+  document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyL") { e.preventDefault(); setTeacher(!teacher); } });
+  document.querySelector("header .brand").addEventListener("dblclick", () => setTeacher(!teacher));
   $("btn-solution").addEventListener("click", () => { if (!running) { ta.value = task.solution; ta.dispatchEvent(new Event("input")); } });
   ta.addEventListener("paste", e => { if (teacher) return; e.preventDefault(); toast("Χωρίς επικόλληση — γράψ' το απέξω 🙂"); });
   ta.addEventListener("drop", e => e.preventDefault());
@@ -233,7 +234,7 @@
   window.addEventListener("resize", fit);
 
   // ───────── Εκκίνηση ─────────
-  setTeacher(teacher);
+  setTeacher(teacher, !teacher);
   fit(); loadLevel("start", false);
   requestAnimationFrame(frame);
   window.__drill = { sim, task, setCode(v) { ta.value = v; ta.dispatchEvent(new Event("input")); } };   // για δοκιμές

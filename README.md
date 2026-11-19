@@ -30,4 +30,4 @@ reset_angle, run_time, run_angle, run_target), `ColorSensor` (color, reflection,
 `wait`, `StopWatch`, `Port`, `Direction`, `Color`, `Stop`, `Button`.
 
 ## Λειτουργία καθηγητή
-Προσθέστε `?teacher=1` στη διεύθυνση ή πατήστε **Ctrl+Shift+L**: επιτρέπεται η επικόλληση και εμφανίζεται κουμπί «Φόρτωσε λύση».
+Προσθέστε `?teacher=1` στη διεύθυνση ή κάντε **διπλό κλικ στο «ROBOTONIO · UML»** πάνω αριστερά (εναλλακτικά Ctrl+Shift+L): επιτρέπεται η επικόλληση και εμφανίζεται κουμπί «Φόρτωσε λύση».
