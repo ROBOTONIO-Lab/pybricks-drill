@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROBOTONIO · Pybricks απέξω</title>
+<style>
+  :root {
+    --paper: #f3efe6; --card: #fffdf8; --ink: #1b2230; --muted: #6a7180; --rule: #ddd6c6;
+    --hub: #f5c400; --code-bg: #141925; --code-ink: #e6e9f0; --code-dim: #5d667a;
+    --ok: #1c8f4e; --bad: #c2362b; --accent: #0b6bcb;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--sans); }
+  header { background: var(--ink); color: #fff; padding: 10px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border-bottom: 4px solid var(--hub); }
+  header .brand { font-weight: 800; letter-spacing: .08em; font-size: 13px; color: var(--hub); }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; min-width: 200px; }
+  .stats { display: flex; gap: 16px; font: 13px var(--mono); color: #c9cfdb; }
+  .stats b { color: #fff; font-weight: 600; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; padding: 16px 20px 28px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 980px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+  .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  h2 { margin: 0 0 6px; font-size: 16px; }
+  .brief ol { margin: 4px 0 0; padding-left: 20px; }
+  .brief li { margin: 2px 0; }
+  code { font-family: var(--mono); font-size: .92em; background: #ece6d8; padding: 0 4px; border-radius: 4px; }
+  .robotcard { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 14px; font-size: 13px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--rule); }
+  .robotcard span { color: var(--muted); }
+  .robotcard b { font-family: var(--mono); background: var(--hub); padding: 0 6px; border-radius: 4px; margin-right: 6px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--ink); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .seg button + button { border-left: 1px solid var(--ink); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  button.btn { border: 1px solid var(--ink); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  button.btn:hover:not(:disabled) { background: #efe9da; }
+  button.btn:disabled { opacity: .4; cursor: default; }
+  button.run { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+  button.run:hover:not(:disabled) { background: #177a42; }
+  button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  select { font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--ink); background: var(--card); color: var(--ink); }
+  .spacer { flex: 1; }
+  .editor { position: relative; display: flex; background: var(--code-bg); border-radius: 10px; overflow: hidden; height: 520px; }
+  .gutter { margin: 0; padding: 12px 8px 12px 10px; font: 14px/1.5 var(--mono); color: var(--code-dim); text-align: right; user-select: none; overflow: hidden; min-width: 44px; white-space: pre; }
+  .gutter .err { color: #fff; background: var(--bad); border-radius: 3px; padding: 0 3px; margin: 0 -3px; }
+  textarea#code { flex: 1; border: 0; resize: none; background: transparent; color: var(--code-ink); font: 14px/1.5 var(--mono); padding: 12px 12px 12px 4px; tab-size: 4; white-space: pre; overflow: auto; caret-color: var(--hub); min-width: 0; }
+  textarea#code:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--hub); }
+  .peek { position: absolute; inset: 0; background: #0d111a; color: #ffe27a; font: 14px/1.5 var(--mono); padding: 12px 14px 12px 54px; white-space: pre; overflow: auto; user-select: none; -webkit-user-select: none; display: none; }
+  .peek.on { display: block; }
+  .peek .count { position: sticky; top: 0; float: right; background: var(--hub); color: var(--ink); font-weight: 700; border-radius: 20px; padding: 2px 12px; }
+  .stage { padding: 10px; }
+  canvas#mat { width: 100%; display: block; border-radius: 6px; background: #96826a; }
+  .telemetry { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; font: 13px var(--mono); }
+  .chip { background: #ece6d8; border-radius: 6px; padding: 3px 9px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+  .chip i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0003; display: inline-block; }
+  .checks { list-style: none; margin: 0; padding: 0; }
+  .checks li { padding: 3px 0 3px 26px; position: relative; color: var(--muted); }
+  .checks li::before { content: "○"; position: absolute; left: 4px; }
+  .checks li.ok { color: var(--ok); font-weight: 600; } .checks li.ok::before { content: "✔"; }
+  .checks li.bad { color: var(--bad); } .checks li.bad::before { content: "✘"; }
+  .banner { display: none; margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: var(--ok); color: #fff; font-weight: 600; }
+  .banner.on { display: block; }
+  pre#console { margin: 0; background: var(--code-bg); color: var(--code-ink); font: 13px/1.5 var(--mono); padding: 10px 12px; border-radius: 8px; min-height: 84px; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+  pre#console .e { color: #ff8f85; } pre#console .h { color: #ffe27a; } pre#console .m { color: var(--code-dim); }
+  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; font-weight: 700; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 20px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">ROBOTONIO · UML</span>
+  <h1>Pybricks απέξω — γράψε, τρέξε, δες το ρομπότ</h1>
+  <div class="stats" aria-live="off">
+    <span>⏱ <b id="st-time">00:00</b></span>
+    <span>👁 <b id="st-peeks">0</b></span>
+    <span>▶ <b id="st-runs">0</b></span>
+  </div>
+</header>
+<main>
+  <div class="col">
+    <section class="card brief">
+      <h2 id="task-title"></h2>
+      <ol id="task-steps"></ol>
+      <div class="robotcard">
+        <div><b>A</b>αριστερό μοτέρ <span>(κοιτάει ανάποδα)</span></div>
+        <div><b>B</b>δεξί μοτέρ</div>
+        <div><b>C</b>αριστερός αισθητήρας χρώματος</div>
+        <div><b>D</b>δεξιός αισθητήρας χρώματος</div>
+        <div>Ρόδες <span>Ø</span> 56 mm</div>
+        <div>Μετατρόχιο 112 mm</div>
+      </div>
+    </section>
+    <div class="bar">
+      <div class="seg" role="group" aria-label="Επίπεδο">
+        <button data-level="gaps">1 · Με κενά</button>
+        <button data-level="outline">2 · Μόνο σχόλια</button>
+        <button data-level="blank">3 · Απέξω</button>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn" id="btn-peek" title="Δείχνει τη λύση για 8 δευτερόλεπτα">👁 Κρυφοκοίταγμα</button>
+      <button class="btn" id="btn-clear" title="Σβήνει τον κώδικα και ξαναρχίζει το χρονόμετρο">↺ Από την αρχή</button>
+    </div>
+    <div class="editor">
+      <pre class="gutter" id="gutter" aria-hidden="true">1</pre>
+      <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Κώδικας Pybricks"></textarea>
+      <div class="peek" id="peek" aria-hidden="true"></div>
+    </div>
+    <div class="bar">
+      <button class="btn run" id="btn-run" title="Ctrl+Enter">▶ Εκτέλεση</button>
+      <button class="btn" id="btn-stop" disabled>■ Στοπ</button>
+      <label for="speed" style="font-size:13px;color:var(--muted)">Ταχύτητα</label>
+      <select id="speed"><option value="1">×1</option><option value="2" selected>×2</option><option value="4">×4</option></select>
+    </div>
+  </div>
+  <div class="col">
+    <section class="card stage">
+      <canvas id="mat" width="1500" height="900" role="img" aria-label="Πίστα με το προσομοιωμένο ρομπότ SPIKE Prime"></canvas>
+      <div class="telemetry" id="telemetry"></div>
+    </section>
+    <section class="card">
+      <div class="label">Έλεγχος αποστολής</div>
+      <ul class="checks" id="checks"></ul>
+      <div class="banner" id="banner" role="status"></div>
+    </section>
+    <section>
+      <div class="label">Έξοδος (print) &amp; σφάλματα</div>
+      <pre id="console" aria-live="polite"></pre>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast" role="status"></div>
+<script src="lib/skulpt.min.js"></script>
+<script src="lib/skulpt-stdlib.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
