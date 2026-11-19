@@ -7,14 +7,14 @@
   const PEEK_SECONDS = 8;
 
   let sim = new P.Sim(task), rt = null, running = false;
-  let level = "gaps", peeks = 0, runs = 0, typingStart = null, typingStop = null, solved = false;
+  let level = "start", peeks = 0, runs = 0, typingStart = null, typingStop = null, solved = false;
 
   const store = {
     get(k) { try { return localStorage.getItem("pbdrill:" + k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem("pbdrill:" + k, v); } catch (e) { /* ιδιωτική περιήγηση */ } }
   };
   const codeKey = () => task.id + ":" + level;
-  const template = () => level === "gaps" ? task.gaps : level === "outline" ? task.outline : "";
+  const template = () => task.starter;
 
   // ───────── Κείμενα αποστολής ─────────
   $("task-title").textContent = task.title;
@@ -34,7 +34,12 @@
     if (solved) { solved = false; typingStop = null; }
     errLine = 0; refreshGutter(); store.set(codeKey(), ta.value);
   });
-  ta.addEventListener("paste", e => { e.preventDefault(); toast("Χωρίς επικόλληση — γράψ' το απέξω 🙂"); });
+  // Λειτουργία καθηγητή: ?teacher=1 στη διεύθυνση ή Ctrl+Shift+L — επιτρέπει επικόλληση, δείχνει «Φόρτωσε λύση»
+  let teacher = new URLSearchParams(location.search).has("teacher");
+  function setTeacher(on) { teacher = on; $("btn-solution").hidden = !on; if (on) toast("Λειτουργία καθηγητή: επικόλληση ενεργή"); }
+  document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); setTeacher(!teacher); } });
+  $("btn-solution").addEventListener("click", () => { if (!running) { ta.value = task.solution; ta.dispatchEvent(new Event("input")); } });
+  ta.addEventListener("paste", e => { if (teacher) return; e.preventDefault(); toast("Χωρίς επικόλληση — γράψ' το απέξω 🙂"); });
   ta.addEventListener("drop", e => e.preventDefault());
   ta.addEventListener("keydown", e => {
     const s = ta.selectionStart, en = ta.selectionEnd, v = ta.value;
@@ -144,8 +149,7 @@
     renderChecks(checks);
     if (checks.every(c => c.ok)) {
       solved = true; if (typingStart !== null) typingStop = Date.now();
-      const lv = { gaps: "Με κενά", outline: "Μόνο σχόλια", blank: "Απέξω" }[level];
-      $("banner").textContent = "Πέτυχες! Επίπεδο «" + lv + "» · χρόνος " + mmss(typedMs()) + " · κρυφοκοιτάγματα " + peeks + " · εκτελέσεις " + runs;
+      $("banner").textContent = "Πέτυχες! Χρόνος " + mmss(typedMs()) + " · κρυφοκοιτάγματα " + peeks + " · εκτελέσεις " + runs;
       $("banner").classList.add("on");
     }
     running = false; rt = null; $("btn-run").disabled = false; $("btn-stop").disabled = true; renderStats();
@@ -229,8 +233,8 @@
   window.addEventListener("resize", fit);
 
   // ───────── Εκκίνηση ─────────
-  const savedLevel = store.get("level");
-  fit(); loadLevel(["gaps", "outline", "blank"].includes(savedLevel) ? savedLevel : "gaps", false);
+  setTeacher(teacher);
+  fit(); loadLevel("start", false);
   requestAnimationFrame(frame);
   window.__drill = { sim, task, setCode(v) { ta.value = v; ta.dispatchEvent(new Event("input")); } };   // για δοκιμές
 })();

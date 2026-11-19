@@ -268,6 +268,14 @@ class Button:
     CENTER = "CENTER"
     BLUETOOTH = "BLUETOOTH"
 
+class Side:
+    TOP = "TOP"
+    BOTTOM = "BOTTOM"
+    FRONT = "FRONT"
+    BACK = "BACK"
+    LEFT = "LEFT"
+    RIGHT = "RIGHT"
+
 class Axis:
     X = "X"
     Y = "Y"
@@ -623,7 +631,7 @@ InventorHub = PrimeHub
     id: "line-until-red",
     title: "Ακολούθησε τη γραμμή μέχρι το ΚΟΚΚΙΝΟ και μέτρα απόσταση",
     steps: [
-      "Αρχικοποίηση: hub, δύο μοτέρ, δύο αισθητήρες χρώματος, DriveBase.",
+      "Αρχικοποίηση: δύο μοτέρ, δύο αισθητήρες χρώματος, DriveBase.",
       "Ακολούθησε την άκρη της μαύρης γραμμής με τον <b>αριστερό</b> αισθητήρα (αναλογικός έλεγχος).",
       "Σταμάτα όταν ο <b>δεξιός</b> αισθητήρας δει <b>κόκκινο</b> — όχι στο πράσινο.",
       "Τύπωσε με <code>print</code> την απόσταση που διένυσε το ρομπότ (mm)."
@@ -635,13 +643,25 @@ InventorHub = PrimeHub
       marks: [{ s: 760, color: "GREEN", length: 40, width: 150 }, { s: -90, color: "RED", length: 40, width: 150 }]
     },
     start: { x: 130, y: 764, heading: 0 },
-    solution: `from pybricks.hubs import PrimeHub
-from pybricks.pupdevices import Motor, ColorSensor
-from pybricks.parameters import Port, Direction, Color
+    // Αρχικό περιεχόμενο του editor: το πρότυπο νέου αρχείου του Pybricks Code για SPIKE Prime
+    starter: `from pybricks.hubs import PrimeHub
+from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor, ForceSensor
+from pybricks.parameters import Button, Color, Direction, Port, Side, Stop
 from pybricks.robotics import DriveBase
+from pybricks.tools import wait, StopWatch
+
+hub = PrimeHub()
+
+`,
+    solution: `from pybricks.hubs import PrimeHub
+from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor, ForceSensor
+from pybricks.parameters import Button, Color, Direction, Port, Side, Stop
+from pybricks.robotics import DriveBase
+from pybricks.tools import wait, StopWatch
+
+hub = PrimeHub()
 
 # --- Αρχικοποίηση ---
-hub = PrimeHub()
 left_motor = Motor(Port.A, Direction.COUNTERCLOCKWISE)
 right_motor = Motor(Port.B)
 left_sensor = ColorSensor(Port.C)
@@ -664,51 +684,6 @@ robot.stop()
 
 # --- Απόσταση που διανύθηκε ---
 print(robot.distance())
-`,
-    gaps: `from pybricks.hubs import ____
-from pybricks.pupdevices import ____, ____
-from pybricks.parameters import Port, Direction, Color
-from pybricks.robotics import ____
-
-# --- Αρχικοποίηση ---
-hub = ____()
-left_motor = Motor(Port.____, Direction.____)
-right_motor = ____(Port.B)
-left_sensor = ColorSensor(Port.____)
-right_sensor = ____(Port.D)
-robot = DriveBase(____, ____, wheel_diameter=____, axle_track=____)
-
-# --- Σταθερές ---
-TARGET = ____
-KP = 1.5
-SPEED = 150
-
-# --- Ακολουθία άκρης γραμμής μέχρι το κόκκινο ---
-robot.____()
-while True:
-    error = left_sensor.____() - TARGET
-    robot.drive(____, ____ * error)
-    if right_sensor.____() == Color.____:
-        ____
-robot.____()
-
-# --- Απόσταση που διανύθηκε ---
-print(robot.____())
-`,
-    outline: `# --- Εισαγωγές (imports) ---
-
-
-# --- Αρχικοποίηση ---
-
-
-# --- Σταθερές ---
-
-
-# --- Ακολουθία άκρης γραμμής μέχρι το κόκκινο ---
-
-
-# --- Απόσταση που διανύθηκε ---
-
 `,
     evaluate(sim, run) {
       const red = sim.mat.marks.find(m => m.color === "RED");

@@ -20,7 +20,7 @@
 ## Αλλαγές
 - **Ρομπότ:** αντικείμενο `ROBOT` στην αρχή του `js/sim.js` (θύρες, διάμετρος τροχού, μετατρόχιο, θέση αισθητήρων).
 - **Νέα αποστολή:** νέο αντικείμενο στον πίνακα `TASKS` του `js/sim.js` — σημεία γραμμής (mm), χρωματιστά σημάδια,
-  θέση εκκίνησης, `solution` / `gaps` / `outline`, και συνάρτηση `evaluate` με τα κριτήρια επιτυχίας.
+  θέση εκκίνησης, `starter` (αρχικό περιεχόμενο του editor) και `solution`, και συνάρτηση `evaluate` με τα κριτήρια επιτυχίας.
   (Η σελίδα δείχνει προς το παρόν την πρώτη αποστολή του πίνακα.)
 
 ## Τι υποστηρίζει ο προσομοιωτής
@@ -28,3 +28,6 @@
 reset_angle, run_time, run_angle, run_target), `ColorSensor` (color, reflection, hsv, ambient),
 `DriveBase` (drive, stop, brake, straight, turn, distance, angle, reset, settings, state),
 `wait`, `StopWatch`, `Port`, `Direction`, `Color`, `Stop`, `Button`.
+
+## Λειτουργία καθηγητή
+Προσθέστε `?teacher=1` στη διεύθυνση ή πατήστε **Ctrl+Shift+L**: επιτρέπεται η επικόλληση και εμφανίζεται κουμπί «Φόρτωσε λύση».
