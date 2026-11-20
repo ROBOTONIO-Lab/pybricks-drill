@@ -24,6 +24,16 @@
   code { font-family: var(--mono); font-size: .92em; background: var(--soft); padding: 0 4px; border-radius: 4px; }
   .label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
 
+  .seg { display: inline-flex; border: 1px solid #fff8; border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: #fff; padding: 4px 12px; font: 600 13px var(--sans); cursor: pointer; }
+  .seg button + button { border-left: 1px solid #fff8; }
+  .seg button[aria-pressed="true"] { background: var(--hub); color: var(--ink); }
+  body:not(.blocks) .only-blocks { display: none; }
+  body.blocks .only-python { display: none; }
+  button.load { background: var(--hub); font-weight: 700; }
+  textarea#code::placeholder { color: #8f98ab; white-space: pre-wrap; }
+  textarea#code[readonly] { caret-color: transparent; }
+
   /* Κάρτα ρομπότ */
   details.robot > summary { cursor: pointer; font-weight: 700; font-size: 16px; list-style-position: inside; }
   .robot-body { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 8px 24px; align-items: center; margin-top: 8px; }
@@ -51,6 +61,8 @@
   .telemetry { display: flex; gap: 8px; flex-wrap: wrap; font: 13px var(--mono); margin-left: auto; }
   .chip { background: var(--soft); border-radius: 6px; padding: 3px 9px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
   .chip i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0003; display: inline-block; }
+  .hubwrap { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-left: 8px; }
+  canvas#hubdisp { width: 46px; height: 46px; border-radius: 6px; display: block; }
   canvas#mat { width: 100%; display: block; border-radius: 6px; background: #96826a; }
   button.btn { border: 1px solid var(--ink); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
   button.btn:hover:not(:disabled) { background: #efe9da; }
@@ -100,6 +112,9 @@
 <header>
   <span class="brand" title="Διπλό κλικ: λειτουργία καθηγητή">ROBOTONIO · UML</span>
   <h1>Προκλήσεις Pybricks — γράψε, τρέξε, δες το ρομπότ</h1>
+  <div class="seg" id="mode" role="group" aria-label="Έκδοση">
+    <button data-mode="python">Python</button><button data-mode="blocks">Blocks</button>
+  </div>
   <div class="stats">
     <span title="Χρόνος σε αυτή την πρόκληση">⏱ <b id="st-time">00:00</b></span>
     <span title="Υποδείξεις που άνοιξες">💡 <b id="st-hints">0</b></span>
@@ -124,6 +139,7 @@
           <li>Ρόδες διαμέτρου <b>56 mm</b>, μετατρόχιο <b>112 mm</b>.</li>
           <li>Οι αισθητήρες κοιτάνε κάτω, 60 mm μπροστά από τον άξονα των τροχών και 48 mm ο ένας από τον άλλον.</li>
           <li>Μπροστά από κάθε αισθητήρα υπάρχει μια εξοχή, για να σπρώχνει τουβλάκια.</li>
+          <li>Οθόνη 5×5: <code>hub.display.text(str(τιμή))</code> δείχνει τα ψηφία ένα-ένα· το <code>hub.display.number()</code> χωράει μόνο από −99 έως 99.</li>
           <li>Το hub έχει γυροσκόπιο: <code>robot.use_gyro(True)</code> για ακριβείς ευθείες και στροφές.</li>
         </ul>
       </div>
@@ -143,6 +159,7 @@
       <button class="btn" id="btn-stop" disabled>■ Στοπ</button>
       <label for="speed" style="font-size:13px;color:var(--muted)">Ταχύτητα</label>
       <select id="speed"><option value="1">×1</option><option value="2" selected>×2</option><option value="4">×4</option></select>
+      <span class="hubwrap" title="Η οθόνη 5×5 του hub"><canvas id="hubdisp" width="100" height="100" role="img" aria-label="Οθόνη 5×5 του hub"></canvas><span>οθόνη hub</span></span>
       <div class="telemetry" id="telemetry"></div>
     </div>
     <canvas id="mat" width="1600" height="760" role="img" aria-label="Πίστα με το προσομοιωμένο ρομπότ SPIKE Prime"></canvas>
@@ -157,10 +174,13 @@
   <div class="work">
     <section>
       <div class="bar">
-        <span class="label">Ο κώδικάς σου</span>
+        <span class="label" id="code-label">Ο κώδικάς σου</span>
         <span class="spacer"></span>
+        <button class="btn only-blocks load" id="btn-load">📂 Φόρτωσε αρχείο από Pybricks</button>
+        <button class="btn only-blocks" id="btn-paste">📋 Επικόλληση κώδικα</button>
+        <input type="file" id="file-input" accept=".py,text/x-python,text/plain" hidden>
         <button class="btn" id="btn-solution" hidden>⇩ Φόρτωσε λύση</button>
-        <button class="btn" id="btn-clear" title="Σβήνει όλο τον κώδικα και ξαναρχίζει από τα imports">↺ Από την αρχή</button>
+        <button class="btn only-python" id="btn-clear" title="Σβήνει όλο τον κώδικα και ξαναρχίζει από τα imports">↺ Από την αρχή</button>
       </div>
       <div class="editor">
         <pre class="gutter" id="gutter" aria-hidden="true">1</pre>

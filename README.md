@@ -24,6 +24,12 @@
 `hints` (εμφανίζονται μία-μία), `solution`, `evaluate(sim, run)` που επιστρέφει τους ελέγχους.
 Η πίστα περιγράφεται με `rect` (ορθογώνιο από γραμμή), `line` (καμπύλη από σημεία) και `marks` (χρωματιστά σημάδια).
 
+## Έκδοση Blocks
+Με το κουμπί **Blocks** πάνω δεξιά (ή `?blocks=1` στη διεύθυνση) ο μαθητής δεν πληκτρολογεί: φτιάχνει το πρόγραμμα
+με blocks στο Pybricks, κατεβάζει το αρχείο `.py` του προγράμματος και το φορτώνει εδώ («Φόρτωσε αρχείο από Pybricks»,
+σύρσιμο στη σελίδα, ή επικόλληση της Python που δείχνει το Pybricks). Το setup των blocks πρέπει να ταιριάζει με το
+ρομπότ της σελίδας (θύρες, ρόδα, μετατρόχιο).
+
 ## Λειτουργία καθηγητή
 `?teacher=1` στη διεύθυνση, ή διπλό κλικ στο «ROBOTONIO · UML» πάνω αριστερά (εναλλακτικά Ctrl+Shift+L):
 επιτρέπεται η επικόλληση, εμφανίζεται «Φόρτωσε λύση» και ξεκλειδώνουν όλες οι προκλήσεις.
@@ -31,7 +37,7 @@
 ## Τι προσομοιώνεται
 - Το ρομπότ δεν είναι ιδανικό: ο δεξιός τροχός χάνει 1% και στις στροφές υπάρχει 8% ολίσθηση
   (`driftRight`, `turnScrub` στο `ROBOT`). Χωρίς `use_gyro(True)` το `turn(90)` βγαίνει περίπου 83°.
-- `PrimeHub` (light, display, speaker.beep, imu.heading/reset_heading), `Motor` (run, dc, stop, brake, hold, angle,
+- `PrimeHub` (light, display.text/number/char/pixel/icon/off στην οθόνη 5×5, speaker.beep, imu.heading/reset_heading), `Motor` (run, dc, stop, brake, hold, angle,
   speed, reset_angle, run_time, run_angle, run_target), `ColorSensor` (color, reflection, hsv, ambient),
   `DriveBase` (drive, stop, brake, straight, turn, distance, angle, reset, settings, state, use_gyro),
   `wait`, `StopWatch`, `Port`, `Direction`, `Color`, `Stop`, `Button`, `Side`.

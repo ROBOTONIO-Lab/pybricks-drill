@@ -137,6 +137,45 @@
              reflection: Math.round((rgb[0] + rgb[1] + rgb[2]) / 7.65) };
   }
 
+  // ───────────────────────── Οθόνη 5×5 του hub ─────────────────────────
+  const FONT = {
+    "0": ".##..|#..#.|#..#.|#..#.|.##..", "1": "..#..|.##..|..#..|..#..|.###.", "2": "###..|...#.|.##..|#....|####.",
+    "3": "####.|...#.|..#..|#..#.|.##..", "4": "..##.|.#.#.|#..#.|#####|...#.", "5": "#####|#....|####.|....#|####.",
+    "6": "...#.|..#..|.###.|#...#|.###.", "7": "#####|...#.|..#..|.#...|#....", "8": ".###.|#...#|.###.|#...#|.###.",
+    "9": ".###.|#...#|.###.|..#..|.#...",
+    "A": ".##..|#..#.|####.|#..#.|#..#.", "B": "###..|#..#.|###..|#..#.|###..", "C": ".###.|#....|#....|#....|.###.",
+    "D": "###..|#..#.|#..#.|#..#.|###..", "E": "####.|#....|###..|#....|####.", "F": "####.|#....|###..|#....|#....",
+    "G": ".###.|#....|#.##.|#..#.|.###.", "H": "#..#.|#..#.|####.|#..#.|#..#.", "I": ".###.|..#..|..#..|..#..|.###.",
+    "J": "..###|...#.|...#.|#..#.|.##..", "K": "#..#.|#.#..|##...|#.#..|#..#.", "L": "#....|#....|#....|#....|####.",
+    "M": "#...#|##.##|#.#.#|#...#|#...#", "N": "#...#|##..#|#.#.#|#..##|#...#", "O": ".##..|#..#.|#..#.|#..#.|.##..",
+    "P": "###..|#..#.|###..|#....|#....", "Q": ".##..|#..#.|#..#.|.##..|..##.", "R": "###..|#..#.|###..|#.#..|#..#.",
+    "S": ".###.|#....|.##..|...#.|###..", "T": "#####|..#..|..#..|..#..|..#..", "U": "#..#.|#..#.|#..#.|#..#.|.##..",
+    "V": "#...#|#...#|#...#|.#.#.|..#..", "W": "#...#|#...#|#.#.#|##.##|#...#", "X": "#..#.|#..#.|.##..|#..#.|#..#.",
+    "Y": "#...#|.#.#.|..#..|..#..|..#..", "Z": "####.|..#..|.#...|#....|####.",
+    " ": ".....|.....|.....|.....|.....", "-": ".....|.....|.###.|.....|.....", ".": ".....|.....|.....|.#...|.....",
+    ",": ".....|.....|.....|..#..|.#...", ":": ".....|.#...|.....|.#...|.....", "=": ".....|.###.|.....|.###.|.....",
+    "+": ".....|..#..|.###.|..#..|.....", "!": ".#...|.#...|.#...|.....|.#...", "?": ".###.|#...#|..##.|.....|..#..",
+    ">": ".#...|..#..|...#.|..#..|.#...", "<": "...#.|..#..|.#...|..#..|...#.", "_": ".....|.....|.....|.....|#####"
+  };
+  const SMALL = ["##|##|##|##|##", ".#|.#|.#|.#|.#", "##|.#|##|#.|##", "##|.#|##|.#|##", "#.|#.|##|.#|.#",
+                 "##|#.|##|.#|##", "#.|#.|##|##|##", "##|.#|.#|.#|.#", "##|##|..|##|##", "##|##|##|.#|.#"];
+  function glyph(ch) {
+    const g = FONT[ch] || FONT[String(ch).toUpperCase()] || FONT["?"], px = [];
+    g.split("|").forEach(row => { for (let c = 0; c < 5; c++) px.push(row[c] === "#" ? 100 : 0); });
+    return px;
+  }
+  function numberPixels(n) {       // όπως στο Pybricks: μόνο από -99 έως 99, αλλιώς > ή <
+    n = Math.round(n);
+    if (n > 99) return glyph(">");
+    if (n < -99) return glyph("<");
+    const a = Math.abs(n), px = new Array(25).fill(0);
+    const put = (d, col) => SMALL[d].split("|").forEach((row, r) => { for (let c = 0; c < 2; c++) if (row[c] === "#") px[r * 5 + col + c] = 100; });
+    if (a >= 10) put(Math.floor(a / 10), 0);
+    put(a % 10, 3);
+    if (n < 0) px[12] = 50;
+    return px;
+  }
+
   // ───────────────────────── Φυσική ─────────────────────────
   class Sim {
     constructor(task, rnd) { this.task = task; this.setup(rnd); }
@@ -153,7 +192,7 @@
       this.motors = { A: { target: 0, speed: 0, angle: 0 }, B: { target: 0, speed: 0, angle: 0 } };
       this.db = null; this.usedGyro = false;
       this.trail = [[this.x, this.y]]; this._acc = 0;
-      this.light = null; this.display = ""; this.beepUntil = 0;
+      this.light = null; this.pixels = new Array(25).fill(0); this.shown = []; this.beepUntil = 0;
     }
     stopMotors() { if (this.db) this.db.active = false; this.motors.A.target = 0; this.motors.B.target = 0; }
     sensorPos(side) {
@@ -269,7 +308,15 @@
         case "heading": return this.after(1, sim.heading());
         case "reset_heading": sim.headingZero += sim.heading() - a[1]; return null;
         case "light": sim.light = a[1]; return null;
-        case "display": sim.display = String(a[1]); return null;
+        case "disp_off": sim.pixels = new Array(25).fill(0); return null;
+        case "disp_char": sim.pixels = glyph(String(a[1]).charAt(0) || " "); sim.shown.push(String(a[1])); return null;
+        case "disp_number": sim.pixels = numberPixels(a[1]); sim.shown.push(String(a[1])); return null;
+        case "disp_pixel": if (a[1] >= 0 && a[1] < 5 && a[2] >= 0 && a[2] < 5) sim.pixels[a[1] * 5 + a[2]] = Math.max(0, Math.min(100, a[3])); return null;
+        case "disp_text": { sim.shown.push(String(a[1])); const self = this, txt = String(a[1]);
+          return (async function () {            // ένας χαρακτήρας τη φορά, όπως στο πραγματικό hub
+            for (const ch of txt) { sim.pixels = glyph(ch); await self.long(a[2]); sim.pixels = new Array(25).fill(0); await self.long(a[3]); }
+            return null;
+          })(); }
         case "beep": sim.beepUntil = sim.time + a[2]; return this.long(a[2]).then(() => null);
       }
       throw new Error("unknown sim call " + name);
@@ -573,17 +620,23 @@ class _Light:
 
 class _Display:
     def text(self, text, on=500, off=50):
-        _sim.op("display", str(text))
+        _sim.op("disp_text", str(text), on, off)
     def number(self, number):
-        _sim.op("display", str(number))
+        _sim.op("disp_number", number)
     def char(self, char):
-        _sim.op("display", str(char))
+        _sim.op("disp_char", str(char))
     def off(self):
-        _sim.op("display", "")
-    def icon(self, icon):
-        pass
+        _sim.op("disp_off")
     def pixel(self, row, column, brightness=100):
-        pass
+        _sim.op("disp_pixel", row, column, brightness)
+    def icon(self, icon):
+        r = 0
+        for line in icon:
+            c = 0
+            for value in line:
+                _sim.op("disp_pixel", r, c, value)
+                c += 1
+            r += 1
     def orientation(self, up):
         pass
 

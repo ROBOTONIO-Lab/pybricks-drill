@@ -16,6 +16,9 @@
   let task = TASKS[idx], sim = new P.Sim(task), rt = null, running = false;
   let runs = 0, taskStart = Date.now(), taskStop = null, solved = false;
   const hintsShown = TASKS.map(() => 0);
+  // Έκδοση Blocks: ο μαθητής φτιάχνει το πρόγραμμα με blocks στο Pybricks και φέρνει εδώ την Python που παράγει (αρχείο .py ή επικόλληση)
+  let blocks = new URLSearchParams(location.search).has("blocks") || store.get("mode") === "blocks";
+  const codeKey = () => blocks ? "code-blocks" : "code";
 
   // ───────── Editor (ο ίδιος κώδικας σε όλες τις προκλήσεις) ─────────
   const ta = $("code"), gutter = $("gutter");
@@ -25,10 +28,51 @@
     for (let i = 1; i <= n; i++) h += (i === errLine ? '<span class="err">' + i + "</span>" : i) + "\n";
     gutter.innerHTML = h; gutter.scrollTop = ta.scrollTop;
   }
-  function setCode(v) { ta.value = v; errLine = 0; refreshGutter(); store.set("code", v); }
+  function setCode(v) { ta.value = v; errLine = 0; refreshGutter(); store.set(codeKey(), v); }
   ta.addEventListener("scroll", () => { gutter.scrollTop = ta.scrollTop; });
-  ta.addEventListener("input", () => { errLine = 0; refreshGutter(); store.set("code", ta.value); });
+  ta.addEventListener("input", () => { errLine = 0; refreshGutter(); store.set(codeKey(), ta.value); });
   ta.addEventListener("drop", e => e.preventDefault());
+
+  // ───────── Έκδοση Blocks: φόρτωση αρχείου .py, επικόλληση, σύρσιμο ─────────
+  function importProgram(text, from) {
+    if (running) return;
+    text = String(text || "").replace(/\r\n?/g, "\n");
+    if (!/pybricks/.test(text)) { toast("Αυτό δεν μοιάζει με πρόγραμμα Pybricks"); return; }
+    setCode(text); ta.scrollTop = 0; toast("Φορτώθηκε " + from + " — πάτα «Εκτέλεση»");
+  }
+  function readFile(f) {
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => importProgram(r.result, "το αρχείο " + f.name);
+    r.onerror = () => toast("Δεν μπόρεσα να διαβάσω το αρχείο");
+    r.readAsText(f);
+  }
+  $("btn-load").addEventListener("click", () => $("file-input").click());
+  $("file-input").addEventListener("change", e => { readFile(e.target.files[0]); e.target.value = ""; });
+  $("btn-paste").addEventListener("click", async () => {
+    try { importProgram(await navigator.clipboard.readText(), "από το πρόχειρο"); }
+    catch (err) { toast("Κάνε κλικ στη σελίδα και πάτα Ctrl+V"); }
+  });
+  document.addEventListener("paste", e => {
+    if (!blocks) return;
+    const t = e.clipboardData && e.clipboardData.getData("text");
+    if (t) { e.preventDefault(); importProgram(t, "από το πρόχειρο"); }
+  });
+  document.addEventListener("dragover", e => { if (blocks) e.preventDefault(); });
+  document.addEventListener("drop", e => { if (!blocks) return; e.preventDefault(); readFile(e.dataTransfer.files[0]); });
+  function applyMode() {
+    store.set("mode", blocks ? "blocks" : "python");
+    document.body.classList.toggle("blocks", blocks);
+    document.querySelectorAll("#mode button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.mode === "blocks") === blocks)));
+    ta.readOnly = blocks;
+    ta.placeholder = blocks ? "1. Φτιάξε το πρόγραμμα με blocks στο Pybricks.\n2. Κατέβασε το αρχείο του (.py) από τη λίστα αρχείων.\n3. Πάτα εδώ «Φόρτωσε αρχείο από Pybricks» ή σύρε το αρχείο στη σελίδα.\n\nΕναλλακτικά: αντίγραψε τον κώδικα Python που δείχνει το Pybricks και πάτα Ctrl+V." : "";
+    $("code-label").textContent = blocks ? "Το πρόγραμμά σου από το Pybricks" : "Ο κώδικάς σου";
+    const saved = store.get(codeKey());
+    ta.value = saved !== null ? saved : (blocks ? "" : P.STARTER); errLine = 0; refreshGutter();
+  }
+  document.querySelectorAll("#mode button").forEach(b => b.addEventListener("click", () => {
+    if (running) return; blocks = b.dataset.mode === "blocks"; applyMode();
+  }));
   ta.addEventListener("keydown", e => {
     const s = ta.selectionStart, en = ta.selectionEnd, v = ta.value;
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); return; }
@@ -72,7 +116,7 @@
   document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyL") { e.preventDefault(); setTeacher(!teacher); } });
   document.querySelector("header .brand").addEventListener("dblclick", () => setTeacher(!teacher));
   $("btn-solution").addEventListener("click", () => { if (!running) setCode(task.solution); });
-  ta.addEventListener("paste", e => { if (teacher) return; e.preventDefault(); toast("Χωρίς επικόλληση — γράψ' το μόνος σου 🙂"); });
+  ta.addEventListener("paste", e => { if (teacher || blocks) return; e.preventDefault(); toast("Χωρίς επικόλληση — γράψ' το μόνος σου 🙂"); });
 
   // ───────── Στατιστικά ─────────
   const mmss = ms => { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
@@ -133,6 +177,7 @@
   // ───────── Εκτέλεση ─────────
   async function run() {
     if (running) return;
+    if (blocks && !ta.value.trim()) { toast("Φόρτωσε πρώτα το πρόγραμμά σου από το Pybricks"); return; }
     running = true; runs++; renderStats(); errLine = 0; refreshGutter();
     $("btn-run").disabled = true; $("btn-stop").disabled = false;
     sim.setup(); matCache = null;                    // νέο τυχαίο στιγμιότυπο της πρόκλησης
@@ -203,7 +248,7 @@
   }
   function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
   // Το ρομπότ σε τοπικές συντεταγμένες (mm): αρχή στο μέσο του άξονα, +x μπροστά
-  function drawRobot(g, x, y, th, eyes, light) {
+  function drawRobot(g, x, y, th, eyes, light, pixels) {
     const half = R.axleTrack / 2, sf = R.sensorForward, ss = R.sensorSide;
     g.save(); g.translate(x, y); g.rotate(th);
     g.fillStyle = "#0002"; rr(g, -62, -half - 10, 112, R.axleTrack + 28, 14); g.fill();           // σκιά
@@ -219,8 +264,12 @@
     g.fillStyle = "#c9ccd2"; g.beginPath(); g.arc(-48, 0, 9, 0, 7); g.fill();                       // ρόδα-μπίλια
     g.fillStyle = "#f5c400"; rr(g, -56, -30, 92, 60, 9); g.fill();                                  // hub
     g.fillStyle = "#fffdf5"; rr(g, -50, -24, 80, 48, 6); g.fill();
-    g.fillStyle = "#d9d5c8";
-    for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) g.fillRect(-36 + i * 8.5, -19 + j * 8.5, 5, 5);
+    // οθόνη 5×5: η πάνω γραμμή είναι προς το μπροστινό μέρος του ρομπότ
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+      const b = pixels ? pixels[r * 5 + c] : 0;
+      g.fillStyle = b > 0 ? (b > 60 ? "#e06c00" : "#f0b673") : "#d9d5c8";
+      g.fillRect(-36 + (4 - r) * 8.5 - (b > 0 ? 1 : 0), -19 + c * 8.5 - (b > 0 ? 1 : 0), b > 0 ? 7 : 5, b > 0 ? 7 : 5);
+    }
     g.fillStyle = light ? css(P.RGB[light] || [120, 220, 255]) : "#7fd1ff";
     g.beginPath(); g.arc(19, 0, 7, 0, 7); g.fill();
     g.fillStyle = "#1b2230"; g.beginPath(); g.moveTo(36, 0); g.lineTo(28, -6); g.lineTo(28, 6); g.fill(); // βέλος «μπροστά»
@@ -257,7 +306,17 @@
       sim.trail.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.lineTo(sim.x, sim.y); ctx.stroke();
     }
     const c = sim.read("C"), d = sim.read("D");
-    drawRobot(ctx, sim.x, sim.y, sim.th, [c.rgb, d.rgb], sim.light);
+    drawRobot(ctx, sim.x, sim.y, sim.th, [c.rgb, d.rgb], sim.light, sim.pixels);
+    const key = sim.pixels.join("");
+    if (frame.px !== key) {                          // η οθόνη του hub σε μεγέθυνση, όρθια
+      frame.px = key; const hc = $("hubdisp"), hg = hc.getContext("2d"), u = hc.width / 5;
+      hg.fillStyle = "#141925"; hg.fillRect(0, 0, hc.width, hc.height);
+      for (let r = 0; r < 5; r++) for (let q = 0; q < 5; q++) {
+        const b = sim.pixels[r * 5 + q];
+        hg.fillStyle = b > 0 ? (b > 60 ? "#ffd21f" : "#8a7420") : "#2a3142";
+        hg.fillRect(q * u + u * 0.14, r * u + u * 0.14, u * 0.72, u * 0.72);
+      }
+    }
     const chip = (name, r) => '<span class="chip">' + name + ' <i style="background:' + css(r.rgb) + '"></i>' + r.name.padEnd(6, " ") + " " + String(r.reflection).padStart(3, " ") + "%</span>";
     const html = chip("C", c) + chip("D", d) +
       '<span class="chip">γυροσκόπιο ' + String(Math.round(sim.heading())).padStart(4, " ") + "°</span>" +
@@ -268,8 +327,7 @@
   window.addEventListener("resize", fit);
 
   // ───────── Εκκίνηση ─────────
-  const saved = store.get("code");
-  setCode(saved !== null ? saved : P.STARTER);
+  applyMode();
   setTeacher(teacher, true);
   loadTask(idx);
   drawRobotFigure();

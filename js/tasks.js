@@ -8,7 +8,8 @@
   const MAT = { width: 1600, height: 760, lineWidth: 20 };
   const CX = 800, CY = 380;
   const pick = (rnd, lo, hi, step) => lo + step * Math.floor(rnd() * (Math.floor((hi - lo) / step) + 1));
-  const numbers = out => (out.match(/-?\d+(\.\d+)?/g) || []).map(Number);
+  // ό,τι αριθμούς έδειξε ο μαθητής: με print ή στην οθόνη του hub
+  const numbers = (run, sim) => ((run.output + " " + sim.shown.join(" ")).match(/-?\d+(\.\d+)?/g) || []).map(Number);
   const rectMat = (w, h) => Object.assign({ rect: { cx: CX, cy: CY, w, h } }, MAT);
   const sensorLineDist = sim => Math.min.apply(null, ["left", "right"].map(sd => { const p = sim.sensorPos(sd); return Math.abs(sim.mat.rectSd(p[0], p[1])); }));
 
@@ -80,20 +81,20 @@ robot.stop()
       id: "square-side",
       title: "Μέτρα την πλευρά του τετραγώνου",
       desc: "<p><b>Αρχή:</b> όπως πριν — τετράγωνο από μαύρη γραμμή 20 mm, ρομπότ στο κέντρο, κοιτάζει οριζόντια προς μία πλευρά.</p>" +
-            "<p><b>Στόχος:</b> το ρομπότ μετρά το μήκος μιας πλευράς του τετραγώνου (εσωτερικά, από μαύρο σε μαύρο) και το εμφανίζει με <code>print</code> σε mm.</p>" +
+            "<p><b>Στόχος:</b> το ρομπότ μετρά το μήκος μιας πλευράς του τετραγώνου (εσωτερικά, από μαύρο σε μαύρο) και το εμφανίζει με <code>print</code> ή στην οθόνη του hub σε mm.</p>" +
             "<p class=\"note\">Το μέγεθος αλλάζει σε κάθε εκτέλεση: πρέπει να το μετρήσει το ρομπότ, δεν γίνεται να το ξέρεις από πριν.</p>",
       build(rnd) { const side = pick(rnd, 440, 560, 20); return { mat: rectMat(side, side), start: { x: CX, y: CY, heading: 0 }, info: { side: side - 20 } }; },
       hints: [
         "Σχέδιο: πήγαινε μπροστά μέχρι τη γραμμή, μηδένισε την απόσταση, πήγαινε προς τα <b>πίσω</b> μέχρι την απέναντι γραμμή και διάβασε πόσο διένυσες.",
-        "Μηδενισμός: <code>robot.reset()</code>. Διάβασμα: <code>robot.distance()</code>. Προς τα πίσω η απόσταση βγαίνει αρνητική — χρησιμοποίησε <code>abs()</code>.",
+        "Μηδενισμός: <code>robot.reset()</code>. Διάβασμα: <code>robot.distance()</code>. Προς τα πίσω η απόσταση βγαίνει αρνητική — χρησιμοποίησε <code>abs()</code>. Στην οθόνη του hub: <code>hub.display.text(str(side))</code> δείχνει τα ψηφία ένα-ένα.",
         "Παγίδα: όταν σταματήσεις, ο αισθητήρας είναι ήδη πάνω στο μαύρο. Αν ψάξεις αμέσως για μαύρο, θα το «βρει» επιτόπου. Φύγε πρώτα από τη γραμμή: <code>robot.straight(-60)</code>.",
         "Το δεύτερο μισό:" + code("robot.reset()\nrobot.straight(-60)\nrobot.drive(-SPEED, 0)\nwhile True:\n    if left_sensor.reflection() < TARGET:\n        break\nrobot.stop()\nside = abs(robot.distance())\nprint(side)")
       ],
-      solution: INIT + FORWARD + "\n# --- Πίσω μέχρι την απέναντι γραμμή ---\n" + BACK + "side = abs(robot.distance())\nprint(side)\n",
+      solution: INIT + FORWARD + "\n# --- Πίσω μέχρι την απέναντι γραμμή ---\n" + BACK + "side = abs(robot.distance())\nprint(side)\nhub.display.text(str(side))\n",
       evaluate(sim, run) {
         return [
           { ok: run.finished, text: "Το πρόγραμμα τελείωσε χωρίς σφάλμα" },
-          { ok: run.finished && numbers(run.output).some(n => Math.abs(n - sim.info.side) <= 12), text: "Τύπωσε τη σωστή πλευρά (±12 mm)" }
+          { ok: run.finished && numbers(run, sim).some(n => Math.abs(n - sim.info.side) <= 12), text: "Έδειξε τη σωστή πλευρά (±12 mm)" }
         ];
       }
     },
@@ -102,7 +103,7 @@ robot.stop()
       id: "rect-perimeter",
       title: "Μέτρα την περίμετρο του ορθογωνίου",
       desc: "<p><b>Αρχή:</b> ορθογώνιο (όχι τετράγωνο) από μαύρη γραμμή 20 mm. Το ρομπότ είναι στο κέντρο και κοιτάζει οριζόντια προς μία πλευρά.</p>" +
-            "<p><b>Στόχος:</b> το ρομπότ μετρά την περίμετρο του ορθογωνίου (εσωτερικά) και την εμφανίζει με <code>print</code> σε mm. Χρησιμοποίησε το γυροσκόπιο για τη στροφή.</p>" +
+            "<p><b>Στόχος:</b> το ρομπότ μετρά την περίμετρο του ορθογωνίου (εσωτερικά) και την εμφανίζει με <code>print</code> ή στην οθόνη του hub σε mm. Χρησιμοποίησε το γυροσκόπιο για τη στροφή.</p>" +
             "<p class=\"note\">Οι διαστάσεις αλλάζουν σε κάθε εκτέλεση.</p>",
       build(rnd) {
         const w = pick(rnd, 760, 1000, 40), h = pick(rnd, 340, 440, 20);
@@ -115,13 +116,13 @@ robot.stop()
         "Κράτα κάθε μέτρηση σε δική της μεταβλητή:" + code("length = abs(robot.distance())\nrobot.straight(length / 2)\nrobot.turn(90)\n# ... ίδια μέτρηση ξανά ...\nwidth = abs(robot.distance())\nprint(2 * (length + width))")
       ],
       solution: INIT + FORWARD + "\n# --- Μήκος ---\n" + BACK + "length = abs(robot.distance())\n\n# --- Στο κέντρο, στροφή 90 ---\nrobot.straight(length / 2)\nrobot.turn(90)\n\n" +
-        FORWARD + "\n# --- Πλάτος ---\n" + BACK + "width = abs(robot.distance())\n\nprint(2 * (length + width))\n",
+        FORWARD + "\n# --- Πλάτος ---\n" + BACK + "width = abs(robot.distance())\n\nperimeter = 2 * (length + width)\nprint(perimeter)\nhub.display.text(str(perimeter))\n",
       evaluate(sim, run) {
         const target = 2 * (sim.info.w + sim.info.h);
         return [
           { ok: run.finished, text: "Το πρόγραμμα τελείωσε χωρίς σφάλμα" },
           { ok: sim.usedGyro, text: "Χρησιμοποίησε το γυροσκόπιο (use_gyro)" },
-          { ok: run.finished && numbers(run.output).some(n => Math.abs(n - target) <= 35), text: "Τύπωσε τη σωστή περίμετρο (±35 mm)" }
+          { ok: run.finished && numbers(run, sim).some(n => Math.abs(n - target) <= 35), text: "Έδειξε τη σωστή περίμετρο (±35 mm)" }
         ];
       }
     },
@@ -130,7 +131,7 @@ robot.stop()
       id: "rect-area",
       title: "Λοξή εκκίνηση: μέτρα το εμβαδό",
       desc: "<p><b>Αρχή:</b> ορθογώνιο από μαύρη γραμμή 20 mm. Το ρομπότ είναι στο κέντρο αλλά κοιτάζει λοξά, περίπου 40° ως προς τις γραμμές.</p>" +
-            "<p><b>Στόχος:</b> το ρομπότ μετρά το εμβαδό του ορθογωνίου (εσωτερικά) και το εμφανίζει με <code>print</code> σε mm². Χρησιμοποίησε το γυροσκόπιο.</p>" +
+            "<p><b>Στόχος:</b> το ρομπότ μετρά το εμβαδό του ορθογωνίου (εσωτερικά) και το εμφανίζει με <code>print</code> ή στην οθόνη του hub σε mm². Χρησιμοποίησε το γυροσκόπιο.</p>" +
             "<p class=\"note\">Οι διαστάσεις και η γωνία εκκίνησης αλλάζουν σε κάθε εκτέλεση.</p>",
       build(rnd) {
         // γωνία/διαστάσεις έτσι ώστε το ρομπότ να συναντά τη μακριά πλευρά μακριά από τις γωνίες
@@ -168,13 +169,13 @@ right_motor.hold()
 
 # --- Πρώτη διάσταση ---
 ` + BACK + "first = abs(robot.distance())\n\n# --- Στο κέντρο, στροφή 90 ---\nrobot.straight(first / 2)\nrobot.turn(90)\n\n" +
-        FORWARD + "\n# --- Δεύτερη διάσταση ---\n" + BACK + "second = abs(robot.distance())\n\nprint(first * second)\n",
+        FORWARD + "\n# --- Δεύτερη διάσταση ---\n" + BACK + "second = abs(robot.distance())\n\narea = first * second\nprint(area)\nhub.display.text(str(area))\n",
       evaluate(sim, run) {
         const target = sim.info.w * sim.info.h;
         return [
           { ok: run.finished, text: "Το πρόγραμμα τελείωσε χωρίς σφάλμα" },
           { ok: sim.usedGyro, text: "Χρησιμοποίησε το γυροσκόπιο (use_gyro)" },
-          { ok: run.finished && numbers(run.output).some(n => Math.abs(n - target) <= 0.04 * target), text: "Τύπωσε το σωστό εμβαδό (±4%)" }
+          { ok: run.finished && numbers(run, sim).some(n => Math.abs(n - target) <= 0.04 * target), text: "Έδειξε το σωστό εμβαδό (±4%)" }
         ];
       }
     },
@@ -183,7 +184,7 @@ right_motor.hold()
       id: "line-until-red",
       title: "Ακολούθησε τη γραμμή μέχρι το κόκκινο",
       desc: "<p><b>Αρχή:</b> μαύρη καμπύλη γραμμή με ένα πράσινο και ένα κόκκινο σημάδι. Ο αριστερός αισθητήρας είναι πάνω στην αριστερή άκρη της γραμμής.</p>" +
-            "<p><b>Στόχος:</b> το ρομπότ ακολουθεί την άκρη της γραμμής με τον <b>αριστερό</b> αισθητήρα (αναλογικός έλεγχος), σταματά όταν ο <b>δεξιός</b> δει <b>κόκκινο</b> — όχι στο πράσινο — και εμφανίζει με <code>print</code> την απόσταση που διένυσε σε mm.</p>",
+            "<p><b>Στόχος:</b> το ρομπότ ακολουθεί την άκρη της γραμμής με τον <b>αριστερό</b> αισθητήρα (αναλογικός έλεγχος), σταματά όταν ο <b>δεξιός</b> δει <b>κόκκινο</b> — όχι στο πράσινο — και εμφανίζει με <code>print</code> ή στην οθόνη του hub την απόσταση που διένυσε σε mm.</p>",
       build() {
         return {
           mat: Object.assign({
@@ -220,7 +221,7 @@ print(robot.distance())
           { ok: run.finished, text: "Το πρόγραμμα τελείωσε χωρίς σφάλμα" },
           { ok: sim.maxS > red.s - 60 && sim.maxDev < 60, text: "Ακολούθησε τη γραμμή χωρίς να τη χάσει" },
           { ok: run.finished && onRed && !sim.moving(), text: "Σταμάτησε πάνω στο κόκκινο" },
-          { ok: run.finished && numbers(run.output).some(n => Math.abs(n - sim.odo) <= 35), text: "Τύπωσε τη σωστή απόσταση (±35 mm)" }
+          { ok: run.finished && numbers(run, sim).some(n => Math.abs(n - sim.odo) <= 35), text: "Έδειξε τη σωστή απόσταση (±35 mm)" }
         ];
       }
     }
