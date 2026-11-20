@@ -37,8 +37,11 @@
 ## Τι προσομοιώνεται
 - Το ρομπότ δεν είναι ιδανικό: ο δεξιός τροχός χάνει 1% και στις στροφές υπάρχει 8% ολίσθηση
   (`driftRight`, `turnScrub` στο `ROBOT`). Χωρίς `use_gyro(True)` το `turn(90)` βγαίνει περίπου 83°.
-- `PrimeHub` (light, display.text/number/char/pixel/icon/off στην οθόνη 5×5, speaker.beep, imu.heading/reset_heading), `Motor` (run, dc, stop, brake, hold, angle,
-  speed, reset_angle, run_time, run_angle, run_target), `ColorSensor` (color, reflection, hsv, ambient),
-  `DriveBase` (drive, stop, brake, straight, turn, distance, angle, reset, settings, state, use_gyro),
-  `wait`, `StopWatch`, `Port`, `Direction`, `Color`, `Stop`, `Button`, `Side`.
-- Δεν υπάρχουν ακόμα: τουβλάκια που σπρώχνονται, `curve`, `multitask`, `UltrasonicSensor`, blocks.
+- Η βιβλιοθήκη `pybricks` ακολουθεί την τεκμηρίωση της τρέχουσας έκδοσης (docs.pybricks.com, «latest»):
+  `DriveBase` (straight, turn με `absolute`, arc/curve, drive, stop/brake/hold, distance, angle, state, reset, settings,
+  done, stalled, use_gyro, και `wait=False`), `Motor` (run, dc, run_time, run_angle, run_target, track_target,
+  run_until_stalled, stop/brake/hold, angle, speed, reset_angle, done, load, stalled, settings, control),
+  `ColorSensor`, `PrimeHub` (light, display με `Icon`, speaker, imu, buttons, battery, charger, system),
+  `wait`, `StopWatch`, `hub_menu`, `Port`, `Direction`, `Color`, `Stop`, `Button`, `Side`, `Axis`, `Icon`, `umath`, `urandom`.
+- Δεν υπάρχουν: multitasking (`async`/`await`, `multitask`, `run_task`), `move_by`, `Car`, αισθητήρες πέρα από τον `ColorSensor`,
+  τουβλάκια που σπρώχνονται. Οι επιταχύνσεις, το `then=` και οι ρυθμίσεις PID γίνονται δεκτά αλλά αγνοούνται.

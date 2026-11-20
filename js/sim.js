@@ -27,7 +27,7 @@
 
   const RGB = {
     WHITE: [243, 243, 238], BLACK: [26, 26, 30], RED: [214, 40, 40], GREEN: [0, 146, 70],
-    BLUE: [0, 92, 200], YELLOW: [250, 205, 0], TABLE: [150, 130, 105]
+    BLUE: [0, 92, 200], YELLOW: [250, 205, 0], ORANGE: [255, 140, 0], CYAN: [0, 190, 210], VIOLET: [130, 60, 220], MAGENTA: [220, 40, 200], TABLE: [150, 130, 105]
   };
 
   // ───────────────────────── Γεωμετρία πίστας ─────────────────────────
@@ -189,12 +189,13 @@
       this.x = st.x; this.y = st.y; this.th = st.heading * Math.PI / 180;
       this.th0 = this.th; this.headingZero = 0;
       this.time = 0; this.odo = 0; this.maxDev = 0; this.maxS = 0; this.maxOut = -1e9;
-      this.motors = { A: { target: 0, speed: 0, angle: 0 }, B: { target: 0, speed: 0, angle: 0 } };
+      this.motors = { A: { target: 0, speed: 0, angle: 0, man: null }, B: { target: 0, speed: 0, angle: 0, man: null } };
+      this.wDeg = 0; this.vNow = 0;
       this.db = null; this.usedGyro = false;
       this.trail = [[this.x, this.y]]; this._acc = 0;
       this.light = null; this.pixels = new Array(25).fill(0); this.shown = []; this.beepUntil = 0;
     }
-    stopMotors() { if (this.db) this.db.active = false; this.motors.A.target = 0; this.motors.B.target = 0; }
+    stopMotors() { if (this.db) { this.db.active = false; this.db.man = null; } for (const m of [this.motors.A, this.motors.B]) { m.target = 0; m.man = null; } }
     sensorPos(side) {
       const c = Math.cos(this.th), s = Math.sin(this.th), k = side === "left" ? -1 : side === "right" ? 1 : 0;
       return [this.x + ROBOT.sensorForward * c - k * ROBOT.sensorSide * s,
@@ -216,6 +217,20 @@
     moving() { return Math.abs(this.motors.A.speed) + Math.abs(this.motors.B.speed) > 8; }
     step(dt) {
       const d = this.db;
+      for (const m of [this.motors.A, this.motors.B]) {      // ελιγμοί μεμονωμένου μοτέρ
+        if (!m.man) continue;
+        if (m.man.type === "time") { if (this.time >= m.man.until) { m.target = 0; m.man = null; } else m.target = m.man.speed; }
+        else { const rem = m.man.target - m.angle;
+          if (Math.abs(rem) < 1.5) { m.target = 0; m.man = null; } else m.target = Math.sign(rem) * Math.min(m.man.speed, Math.max(10, Math.abs(rem) * 5)); }
+      }
+      if (d && d.man) {                // ελιγμοί DriveBase: straight / turn / arc
+        const mn = d.man; let rem, fin = false;
+        if (mn.type === "straight") { rem = mn.target - this.dbDistance(); fin = Math.abs(rem) < 1; d.v = Math.sign(rem) * Math.min(mn.speed, Math.max(25, Math.abs(rem) * 5)); d.w = 0; }
+        else if (mn.type === "turn") { rem = mn.target - this.dbHeading(); fin = Math.abs(rem) < 0.7; d.v = 0; d.w = Math.sign(rem) * Math.min(mn.speed, Math.max(15, Math.abs(rem) * 6)); }
+        else { rem = mn.byAngle ? (mn.target - this.dbHeading()) * Math.PI / 180 * mn.r : mn.target - this.dbDistance(); fin = Math.abs(rem) < 1;
+          d.v = Math.sign(rem) * Math.min(mn.speed, Math.max(25, Math.abs(rem) * 5)); d.w = d.v / mn.r * 180 / Math.PI; }
+        if (fin) { d.man = null; d.active = false; this.motors[d.lp].target = 0; this.motors[d.rp].target = 0; }
+      }
       if (d && d.active) {             // έλεγχος πορείας του DriveBase, όπως στο Pybricks
         if (d.gyro) this.usedGyro = true;
         d.target += d.w * dt / 1000;
@@ -231,7 +246,7 @@
       }
       const vl = -this.motors.A.speed * K, vr = this.motors.B.speed * K * (1 - ROBOT.driftRight);   // A είναι καθρεφτισμένο
       const v = (vl + vr) / 2, w = (vl - vr) / ROBOT.axleTrack * (1 - ROBOT.turnScrub);
-      this.th += w * dt / 1000;
+      this.th += w * dt / 1000; this.wDeg = w * 180 / Math.PI; this.vNow = v;
       this.x += v * Math.cos(this.th) * dt / 1000; this.y += v * Math.sin(this.th) * dt / 1000;
       this.odo += v * dt / 1000; this.time += dt;
       this._acc += dt;
@@ -286,6 +301,8 @@
       const behind = (this.now() - this.t0) * this.speed - this.sim.time;
       if (behind > 0) this.sim.advance(Math.min(behind, 80));
     }
+    freeMotor(port) { const d = this.sim.db; if (d && (port === d.lp || port === d.rp)) { d.active = false; d.man = null; } }
+    startDb() { const d = this.sim.db, M = this.sim.motors; M[d.lp].man = null; M[d.rp].man = null; if (!d.active) { d.target = this.sim.dbHeading(); d.active = true; } return d; }
     after(ms, val) { const p = this.tick(ms); return p ? p.then(() => val) : val; }
     call(name) {
       const a = arguments, sim = this.sim, M = sim.motors;
@@ -293,13 +310,27 @@
         case "device": { const d = ROBOT.ports[a[1]]; return d ? d.type : null; }
         case "time": return sim.time;
         case "wait": return a[1] <= 8 ? this.after(Math.max(0, a[1]), null) : this.long(a[1]).then(() => null);
-        case "run": if (sim.db && (a[1] === sim.db.lp || a[1] === sim.db.rp)) sim.db.active = false;
-          M[a[1]].target = a[2]; return this.after(1, null);
-        case "db_init": sim.db = { lp: a[1], ld: a[2], rp: a[3], rd: a[4], wd: a[5], at: a[6], gyro: false, active: false, v: 0, w: 0, target: 0 }; return null;
+        case "run": if (sim.db && (a[1] === sim.db.lp || a[1] === sim.db.rp)) { sim.db.active = false; sim.db.man = null; }
+          M[a[1]].man = null; M[a[1]].target = a[2]; return this.after(1, null);
+        case "m_time": this.freeMotor(a[1]); M[a[1]].man = { type: "time", speed: a[2], until: sim.time + a[3] }; return this.after(1, null);
+        case "m_target": this.freeMotor(a[1]); M[a[1]].man = { type: "angle", speed: Math.max(1, a[2]), target: a[3] }; return this.after(1, null);
+        case "m_done": return this.after(1, !M[a[1]].man && Math.abs(M[a[1]].speed) < 8);
+        case "db_init": sim.db = { lp: a[1], ld: a[2], rp: a[3], rd: a[4], wd: a[5], at: a[6], gyro: false, active: false, man: null, v: 0, w: 0, target: 0 }; return null;
         case "db_gyro": sim.db.gyro = !!a[1]; sim.db.target = sim.dbHeading(); return null;
-        case "db_state": return this.after(1, [sim.dbDistance(), sim.dbHeading()]);
-        case "drive": { const d = sim.db; if (!d.active) { d.target = sim.dbHeading(); d.active = true; } d.v = a[1]; d.w = a[2]; return this.after(1, null); }
-        case "db_stop": sim.db.active = false; M[sim.db.lp].target = 0; M[sim.db.rp].target = 0; return this.after(1, null);
+        case "db_uses_gyro": return !!(sim.db && sim.db.gyro);
+        case "db_state": return this.after(1, [sim.dbDistance(), sim.dbHeading(), sim.vNow, sim.wDeg]);
+        case "db_done": return this.after(1, !sim.db.man && !sim.moving());
+        case "drive": { const d = this.startDb(); d.man = null; d.v = a[1]; d.w = a[2]; return this.after(1, null); }
+        case "db_straight": { const d = this.startDb(); d.man = { type: "straight", target: sim.dbDistance() + a[1], speed: Math.max(1, a[2]) }; return this.after(1, null); }
+        case "db_turn": { const d = this.startDb(); d.man = { type: "turn", target: a[2] ? a[1] : sim.dbHeading() + a[1], speed: Math.max(1, a[3]) }; return this.after(1, null); }
+        case "db_arc": { const d = this.startDb();
+          if (Math.abs(a[1]) < 1) d.man = { type: "turn", target: sim.dbHeading() + (a[2] || 0), speed: 150 };
+          else d.man = a[2] !== null && a[2] !== undefined ? { type: "arc", r: a[1], byAngle: true, target: sim.dbHeading() + a[2], speed: Math.max(1, a[4]) }
+                                                           : { type: "arc", r: a[1], byAngle: false, target: sim.dbDistance() + a[3], speed: Math.max(1, a[4]) };
+          return this.after(1, null); }
+        case "db_stop": if (!sim.db) return null; sim.db.active = false; sim.db.man = null; M[sim.db.lp].man = null; M[sim.db.rp].man = null; M[sim.db.lp].target = 0; M[sim.db.rp].target = 0; return this.after(1, null);
+        case "moving": return sim.moving();
+        case "turn_rate": return sim.wDeg;
         case "angle": return this.after(1, M[a[1]].angle);
         case "speed": return this.after(1, M[a[1]].speed);
         case "color": return this.after(1, sim.read(a[1]).name);
@@ -307,7 +338,7 @@
         case "hsv": return this.after(1, sim.read(a[1]).hsv);
         case "heading": return this.after(1, sim.heading());
         case "reset_heading": sim.headingZero += sim.heading() - a[1]; return null;
-        case "light": sim.light = a[1]; return null;
+        case "light": sim.light = a[1] || null; return null;
         case "disp_off": sim.pixels = new Array(25).fill(0); return null;
         case "disp_char": sim.pixels = glyph(String(a[1]).charAt(0) || " "); sim.shown.push(String(a[1])); return null;
         case "disp_number": sim.pixels = numberPixels(a[1]); sim.shown.push(String(a[1])); return null;
@@ -328,6 +359,8 @@
     "Check the port settings in your script.";
   const PY = {};
   PY["pybricks/__init__.py"] = "";
+  PY["umath.py"] = "from math import *\n";
+  PY["urandom.py"] = "from random import *\n";
   PY["pybricks/parameters.py"] = `
 class _Port:
     def __init__(self, name):
@@ -355,18 +388,38 @@ class Stop:
     COAST_SMART = 4
 
 class Button:
+    LEFT_MINUS = "LEFT_MINUS"
+    LEFT_PLUS = "LEFT_PLUS"
+    RIGHT_MINUS = "RIGHT_MINUS"
+    RIGHT_PLUS = "RIGHT_PLUS"
+    CENTER = "CENTER"
     LEFT = "LEFT"
     RIGHT = "RIGHT"
-    CENTER = "CENTER"
     BLUETOOTH = "BLUETOOTH"
+    A = "A"
+    B = "B"
+    X = "X"
+    Y = "Y"
+    LB = "LB"
+    RB = "RB"
+    LJ = "LJ"
+    RJ = "RJ"
+    GUIDE = "GUIDE"
+    MENU = "MENU"
+    UPLOAD = "UPLOAD"
+    VIEW = "VIEW"
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
+    P4 = "P4"
 
 class Side:
-    TOP = "TOP"
-    BOTTOM = "BOTTOM"
-    FRONT = "FRONT"
-    BACK = "BACK"
-    LEFT = "LEFT"
-    RIGHT = "RIGHT"
+    TOP = 8
+    BOTTOM = 2
+    FRONT = 0
+    BACK = 5
+    LEFT = 4
+    RIGHT = 6
 
 class Axis:
     X = "X"
@@ -382,13 +435,17 @@ class Color:
     def __eq__(self, other):
         if not isinstance(other, Color):
             return False
-        if self._name is not None or other._name is not None:
-            return self._name == other._name
         return self.h == other.h and self.s == other.s and self.v == other.v
     def __ne__(self, other):
         return not self.__eq__(other)
     def __hash__(self):
-        return self.h * 10000 + self.s * 100 + self.v
+        return int(self.h * 10000 + self.s * 100 + self.v)
+    def __mul__(self, factor):
+        return Color(self.h, self.s, max(0, min(100, self.v * factor)))
+    def __rmul__(self, factor):
+        return self.__mul__(factor)
+    def __rshift__(self, degrees):
+        return Color((self.h + degrees) % 360, self.s, self.v)
     def __repr__(self):
         if self._name is not None:
             return "Color." + self._name
@@ -410,9 +467,92 @@ Color.BLACK = Color(0, 0, 10, "BLACK")
 Color.NONE = Color(0, 0, 0, "NONE")
 _COLORS = {"RED": Color.RED, "YELLOW": Color.YELLOW, "GREEN": Color.GREEN, "BLUE": Color.BLUE,
            "WHITE": Color.WHITE, "BLACK": Color.BLACK, "NONE": Color.NONE}
+
+def _color_name(color):
+    if color is None:
+        return None
+    if color.v <= 0:
+        return None
+    if color.s < 30:
+        return "WHITE"
+    h = color.h % 360
+    if h < 20 or h >= 330:
+        return "RED"
+    if h < 45:
+        return "ORANGE"
+    if h < 90:
+        return "YELLOW"
+    if h < 160:
+        return "GREEN"
+    if h < 210:
+        return "CYAN"
+    if h < 255:
+        return "BLUE"
+    if h < 285:
+        return "VIOLET"
+    return "MAGENTA"
+
+class _Image:
+    def __init__(self, rows):
+        self.rows = rows
+    def __iter__(self):
+        return iter(self.rows)
+    def __len__(self):
+        return len(self.rows)
+    def __getitem__(self, i):
+        return self.rows[i]
+    def __mul__(self, factor):
+        return _Image([[max(0, min(100, v * factor)) for v in row] for row in self.rows])
+    def __rmul__(self, factor):
+        return self.__mul__(factor)
+    def __add__(self, other):
+        return _Image([[max(0, min(100, self.rows[r][c] + other.rows[r][c])) for c in range(5)] for r in range(5)])
+
+def _img(text):
+    return _Image([[100 if ch == "#" else 0 for ch in row] for row in text.split("|")])
+
+class Icon:
+    UP = _img("..#..|.###.|#####|.###.|.###.")
+    DOWN = _img(".###.|.###.|#####|.###.|..#..")
+    LEFT = _img("..#..|.####|#####|.####|..#..")
+    RIGHT = _img("..#..|####.|#####|####.|..#..")
+    ARROW_RIGHT_UP = _img("..###|...##|..#.#|.#...|#....")
+    ARROW_RIGHT_DOWN = _img("#....|.#...|..#.#|...##|..###")
+    ARROW_LEFT_UP = _img("###..|##...|#.#..|...#.|....#")
+    ARROW_LEFT_DOWN = _img("....#|...#.|#.#..|##...|###..")
+    ARROW_UP = _img("..#..|.###.|#.#.#|..#..|..#..")
+    ARROW_DOWN = _img("..#..|..#..|#.#.#|.###.|..#..")
+    ARROW_LEFT = _img("..#..|.#...|#####|.#...|..#..")
+    ARROW_RIGHT = _img("..#..|...#.|#####|...#.|..#..")
+    HAPPY = _img("##.##|##.##|.....|#...#|.###.")
+    SAD = _img("##.##|##.##|.....|.###.|#...#")
+    EYE_LEFT = _img(".....|.....|##...|##...|.....")
+    EYE_RIGHT = _img(".....|.....|...##|...##|.....")
+    EYE_LEFT_BLINK = _img(".....|.....|.....|##...|.....")
+    EYE_RIGHT_BLINK = _img(".....|.....|.....|...##|.....")
+    EYE_RIGHT_BROW = _img(".....|...##|.....|.....|.....")
+    EYE_LEFT_BROW = _img(".....|##...|.....|.....|.....")
+    EYE_LEFT_BROW_UP = _img("##...|.....|.....|.....|.....")
+    EYE_RIGHT_BROW_UP = _img("...##|.....|.....|.....|.....")
+    HEART = _img(".#.#.|#####|#####|.###.|..#..")
+    PAUSE = _img(".....|.#.#.|.#.#.|.#.#.|.....")
+    EMPTY = _img(".....|.....|.....|.....|.....")
+    FULL = _img("#####|#####|#####|#####|#####")
+    SQUARE = _img(".....|.###.|.###.|.###.|.....")
+    TRIANGLE_RIGHT = _img(".#...|.##..|.###.|.##..|.#...")
+    TRIANGLE_LEFT = _img("...#.|..##.|.###.|..##.|...#.")
+    TRIANGLE_UP = _img(".....|..#..|.###.|#####|.....")
+    TRIANGLE_DOWN = _img(".....|#####|.###.|..#..|.....")
+    CIRCLE = _img(".###.|#####|#####|#####|.###.")
+    CLOCKWISE = _img("####.|#..#.|#..#.|#.###|...#.")
+    COUNTERCLOCKWISE = _img(".####|.#..#|.#..#|###.#|.#...")
+    TRUE = _img("....#|...#.|#.#..|.#...|.....")
+    FALSE = _img("#...#|.#.#.|..#..|.#.#.|#...#")
 `;
   PY["pybricks/tools.py"] = `
 import _sim
+
+_UNSUPPORTED = "This simulator does not support multitasking (multitask / run_task / async / await) yet."
 
 def wait(time):
     if not isinstance(time, (int, float)):
@@ -438,6 +578,29 @@ class StopWatch:
         if self._paused is not None:
             self._start = self._start + _sim.op("time") - self._paused
             self._paused = None
+
+def read_input_byte(last=False, chr=False):
+    return None
+
+def hub_menu(*symbols):
+    if len(symbols) == 0:
+        raise ValueError("hub_menu needs at least one symbol")
+    _sim.op("disp_char", str(symbols[0]))
+    _sim.op("wait", 300)
+    return symbols[0]
+
+def multitask(*coroutines, race=False):
+    raise NotImplementedError(_UNSUPPORTED)
+
+def run_task(coroutine=None):
+    if coroutine is None:
+        return False
+    raise NotImplementedError(_UNSUPPORTED)
+
+def vector(x, y, z=None):
+    if z is None:
+        return (x, y)
+    return (x, y, z)
 `;
   PY["pybricks/pupdevices.py"] = `
 import _sim
@@ -452,6 +615,18 @@ def _check(port, kind):
     if _sim.op("device", port.name) != kind:
         raise OSError("${ENODEV}")
 
+class _Control:
+    def __init__(self):
+        self.scale = 1
+    def limits(self, speed=None, acceleration=None, torque=None):
+        return (1000, 2000, 560)
+    def pid(self, kp=None, ki=None, kd=None, integral_deadzone=None, integral_rate=None):
+        return (0, 0, 0, 0, 0)
+    def target_tolerances(self, speed=None, position=None):
+        return (50, 11)
+    def stall_tolerances(self, speed=None, time=None):
+        return (20, 200)
+
 class Motor:
     def __init__(self, port, positive_direction=Direction.CLOCKWISE, gears=None, reset_angle=True, profile=None):
         _check(port, "motor")
@@ -460,42 +635,58 @@ class Motor:
         self._p = port.name
         self._d = positive_direction
         self._zero = _sim.op("angle", self._p) * self._d
-    def run(self, speed):
-        _sim.op("run", self._p, speed * self._d)
-    def dc(self, duty):
-        _sim.op("run", self._p, duty * 10 * self._d)
+        self.control = _Control()
+    def _raw_angle(self):
+        return _sim.op("angle", self._p) * self._d - self._zero
+    def _finish(self, wait):
+        if wait:
+            while not _sim.op("m_done", self._p):
+                _sim.op("wait", 4)
+    def angle(self):
+        return int(round(self._raw_angle()))
+    def reset_angle(self, angle=None):
+        if angle is None:
+            angle = 0
+        self._zero = _sim.op("angle", self._p) * self._d - angle
+    def speed(self, window=100):
+        return int(round(_sim.op("speed", self._p) * self._d))
+    def load(self):
+        return 0
+    def stalled(self):
+        return False
+    def done(self):
+        return _sim.op("m_done", self._p)
     def stop(self):
         _sim.op("run", self._p, 0)
     def brake(self):
         _sim.op("run", self._p, 0)
     def hold(self):
         _sim.op("run", self._p, 0)
-    def angle(self):
-        return int(round(_sim.op("angle", self._p) * self._d - self._zero))
-    def speed(self):
-        return int(round(_sim.op("speed", self._p) * self._d))
-    def reset_angle(self, angle=0):
-        self._zero = _sim.op("angle", self._p) * self._d - angle
+    def run(self, speed):
+        _sim.op("run", self._p, speed * self._d)
+    def dc(self, duty):
+        _sim.op("run", self._p, duty * 10 * self._d)
     def run_time(self, speed, time, then=Stop.HOLD, wait=True):
-        self.run(speed)
-        _sim.op("wait", time)
-        self.stop()
+        _sim.op("m_time", self._p, speed * self._d, time)
+        self._finish(wait)
     def run_target(self, speed, target_angle, then=Stop.HOLD, wait=True):
-        speed = abs(speed)
-        while True:
-            rem = target_angle - (_sim.op("angle", self._p) * self._d - self._zero)
-            if abs(rem) < 2:
-                break
-            v = min(speed, max(30, abs(rem) * 8))
-            if rem < 0:
-                v = -v
-            self.run(v)
-            _sim.op("wait", 4)
-        self.stop()
+        _sim.op("m_target", self._p, abs(speed), (target_angle + self._zero) * self._d)
+        self._finish(wait)
     def run_angle(self, speed, rotation_angle, then=Stop.HOLD, wait=True):
         if speed < 0:
             rotation_angle = -rotation_angle
-        self.run_target(speed, self.angle() + rotation_angle)
+        self.run_target(speed, self._raw_angle() + rotation_angle, then, wait)
+    def track_target(self, target_angle):
+        _sim.op("m_target", self._p, 1000, (target_angle + self._zero) * self._d)
+    def run_until_stalled(self, speed, then=Stop.COAST, duty_limit=None):
+        # Στον προσομοιωτή τίποτα δεν μπλοκάρει τα μοτέρ: τρέχει 1 δευτερόλεπτο και σταματά
+        _sim.op("m_time", self._p, speed * self._d, 1000)
+        self._finish(True)
+        return self.angle()
+    def settings(self, max_voltage=None):
+        return (9000,)
+    def close(self):
+        pass
 
 class _Lights:
     def on(self, brightness=100):
@@ -527,11 +718,29 @@ class UltrasonicSensor:
 class ForceSensor:
     def __init__(self, port):
         _check(port, "force")
+
+class ColorDistanceSensor:
+    def __init__(self, port):
+        _check(port, "colordistance")
+
+class DCMotor:
+    def __init__(self, port, positive_direction=Direction.CLOCKWISE):
+        _check(port, "dcmotor")
 `;
   PY["pybricks/robotics.py"] = `
 import _sim
 from pybricks.parameters import Stop
 from pybricks.pupdevices import Motor
+
+class _DriveControl:
+    def limits(self, speed=None, acceleration=None, torque=None):
+        return (500, 1000, 560)
+    def pid(self, kp=None, ki=None, kd=None, integral_deadzone=None, integral_rate=None):
+        return (0, 0, 0, 0, 0)
+    def target_tolerances(self, speed=None, position=None):
+        return (5, 3)
+    def stall_tolerances(self, speed=None, time=None):
+        return (5, 200)
 
 class DriveBase:
     def __init__(self, left_motor, right_motor, wheel_diameter, axle_track):
@@ -540,12 +749,21 @@ class DriveBase:
         if left_motor._p == right_motor._p:
             raise ValueError("left_motor and right_motor must be different motors")
         self._ss = 200
+        self._sa = 750
         self._tr = 150
+        self._ta = 750
         self._d0 = 0
         self._a0 = 0
+        self.distance_control = _DriveControl()
+        self.heading_control = _DriveControl()
         _sim.op("db_init", left_motor._p, left_motor._d, right_motor._p, right_motor._d, wheel_diameter, axle_track)
         self.reset()
+    def _finish(self, wait):
+        if wait:
+            while not _sim.op("db_done"):
+                _sim.op("wait", 4)
     def reset(self, distance=0, angle=0):
+        _sim.op("db_stop")
         s = _sim.op("db_state")
         self._d0 = s[0] - distance
         self._a0 = s[1] - angle
@@ -555,68 +773,92 @@ class DriveBase:
         return int(round(_sim.op("db_state")[1] - self._a0))
     def state(self):
         s = _sim.op("db_state")
-        return (int(round(s[0] - self._d0)), 0, int(round(s[1] - self._a0)), 0)
+        return (int(round(s[0] - self._d0)), int(round(s[2])), int(round(s[1] - self._a0)), int(round(s[3])))
     def settings(self, straight_speed=None, straight_acceleration=None, turn_rate=None, turn_acceleration=None):
+        if straight_speed is None and straight_acceleration is None and turn_rate is None and turn_acceleration is None:
+            return (self._ss, self._sa, self._tr, self._ta)
         if straight_speed is not None:
-            self._ss = straight_speed
+            self._ss = abs(straight_speed)
+        if straight_acceleration is not None:
+            self._sa = straight_acceleration
         if turn_rate is not None:
-            self._tr = turn_rate
-        return (self._ss, 500, self._tr, 500)
+            self._tr = abs(turn_rate)
+        if turn_acceleration is not None:
+            self._ta = turn_acceleration
     def use_gyro(self, use_gyro):
+        _sim.op("db_stop")
         a = _sim.op("db_state")[1] - self._a0
         _sim.op("db_gyro", use_gyro)
         self._a0 = _sim.op("db_state")[1] - a
     def done(self):
-        return True
+        return _sim.op("db_done")
+    def stalled(self):
+        return False
     def drive(self, speed, turn_rate):
         _sim.op("drive", speed, turn_rate)
     def stop(self):
         _sim.op("db_stop")
     def brake(self):
         _sim.op("db_stop")
+    def hold(self):
+        _sim.op("db_stop")
     def straight(self, distance, then=Stop.HOLD, wait=True):
-        target = _sim.op("db_state")[0] + distance
-        while True:
-            rem = target - _sim.op("db_state")[0]
-            if abs(rem) < 1:
-                break
-            v = min(self._ss, max(25, abs(rem) * 5))
-            if rem < 0:
-                v = -v
-            _sim.op("drive", v, 0)
-            _sim.op("wait", 4)
-        _sim.op("db_stop")
-        _sim.op("wait", 150)
-    def turn(self, angle, then=Stop.HOLD, wait=True):
-        target = _sim.op("db_state")[1] + angle
-        while True:
-            rem = target - _sim.op("db_state")[1]
-            if abs(rem) < 0.7:
-                break
-            w = min(self._tr, max(15, abs(rem) * 6))
-            if rem < 0:
-                w = -w
-            _sim.op("drive", 0, w)
-            _sim.op("wait", 4)
-        _sim.op("db_stop")
-        _sim.op("wait", 150)
+        _sim.op("db_straight", distance, self._ss)
+        self._finish(wait)
+    def turn(self, angle, then=Stop.HOLD, wait=True, absolute=False):
+        if absolute:
+            _sim.op("db_turn", self._a0 + angle, True, self._tr)
+        else:
+            _sim.op("db_turn", angle, False, self._tr)
+        self._finish(wait)
+    def arc(self, radius, angle=None, distance=None, then=Stop.HOLD, wait=True):
+        if angle is None and distance is None:
+            raise ValueError("arc() needs an angle or a distance")
+        if angle is not None and distance is not None:
+            raise ValueError("arc() takes an angle or a distance, not both")
+        _sim.op("db_arc", radius, angle, distance, self._ss)
+        self._finish(wait)
+    def curve(self, radius, angle, then=Stop.HOLD, wait=True):
+        self.arc(radius, angle, None, then, wait)
+    def move_by(self, dx, dy, then=Stop.HOLD):
+        raise NotImplementedError("move_by() is not available in this simulator yet.")
 `;
   PY["pybricks/hubs.py"] = `
 import _sim
+from pybricks.parameters import Side, _color_name
+from pybricks.pupdevices import OSError
 
 class _Speaker:
+    def __init__(self):
+        self._volume = 100
     def beep(self, frequency=500, duration=100):
         _sim.op("beep", frequency, duration)
+    def play_notes(self, notes, tempo=120):
+        for note in notes:
+            parts = str(note).split("/")
+            value = 4
+            if len(parts) > 1:
+                digits = ""
+                for ch in parts[1]:
+                    if ch in "0123456789":
+                        digits = digits + ch
+                if digits != "":
+                    value = int(digits)
+            _sim.op("beep", 440, 240000 / tempo / value)
     def volume(self, volume=None):
-        return 100
+        if volume is None:
+            return self._volume
+        self._volume = volume
 
 class _Light:
     def on(self, color):
-        _sim.op("light", color._name)
+        _sim.op("light", _color_name(color))
     def off(self):
         _sim.op("light", None)
     def blink(self, color, durations):
-        _sim.op("light", color._name)
+        _sim.op("light", _color_name(color))
+    def animate(self, colors, interval):
+        _sim.op("light", _color_name(colors[0]))
 
 class _Display:
     def text(self, text, on=500, off=50):
@@ -637,6 +879,8 @@ class _Display:
                 _sim.op("disp_pixel", r, c, value)
                 c += 1
             r += 1
+    def animate(self, matrices, interval):
+        self.icon(matrices[0])
     def orientation(self, up):
         pass
 
@@ -644,17 +888,41 @@ class _IMU:
     def heading(self):
         return _sim.op("heading")
     def reset_heading(self, angle=0):
+        if _sim.op("db_uses_gyro"):
+            raise OSError("[Errno 1] EPERM: cannot reset the heading while a drive base is using the gyro. Use drive_base.reset() instead.")
         _sim.op("reset_heading", angle)
     def ready(self):
         return True
     def stationary(self):
-        return True
-    def tilt(self):
+        return not _sim.op("moving")
+    def up(self, calibrated=True):
+        return Side.TOP
+    def tilt(self, calibrated=True):
         return (0, 0)
+    def acceleration(self, axis=None, calibrated=True):
+        if axis is None:
+            return (0, 0, 9810)
+        if axis == "Z":
+            return 9810
+        return 0
+    def angular_velocity(self, axis=None, calibrated=True):
+        rate = _sim.op("turn_rate")
+        if axis is None:
+            return (0, 0, rate)
+        if axis == "Z":
+            return rate
+        return 0
+    def rotation(self, axis, calibrated=True):
+        if axis == "Z":
+            return _sim.op("heading")
+        return 0
+    def settings(self, angular_velocity_threshold=None, acceleration_threshold=None, heading_correction=None,
+                 angular_velocity_bias=None, angular_velocity_scale=None, acceleration_correction=None):
+        return (2, 2500, 360, (0, 0, 0), (360, 360, 360), (9810, -9810, 9810, -9810, 9810, -9810))
 
 class _Buttons:
     def pressed(self):
-        return []
+        return set()
 
 class _Battery:
     def voltage(self):
@@ -662,20 +930,38 @@ class _Battery:
     def current(self):
         return 150
 
+class _Charger:
+    def connected(self):
+        return False
+    def current(self):
+        return 0
+    def status(self):
+        return 0
+
 class _System:
     def set_stop_button(self, button):
         pass
     def name(self):
         return "ROBOTONIO Sim"
+    def info(self):
+        return {"name": "ROBOTONIO Sim", "reset_reason": 0, "host_connected_ble": True, "program_start_type": 3}
+    def storage(self, offset, read=None, write=None):
+        if read is not None:
+            return bytes(read)
+    def reset_storage(self):
+        pass
+    def shutdown(self):
+        raise SystemExit()
 
 class PrimeHub:
-    def __init__(self, top_side=None, front_side=None):
+    def __init__(self, top_side=None, front_side=None, broadcast_channel=None, observe_channels=None):
         self.speaker = _Speaker()
         self.light = _Light()
         self.display = _Display()
         self.imu = _IMU()
         self.buttons = _Buttons()
         self.battery = _Battery()
+        self.charger = _Charger()
         self.system = _System()
 
 InventorHub = PrimeHub

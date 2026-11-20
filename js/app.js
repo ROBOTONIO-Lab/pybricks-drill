@@ -136,6 +136,7 @@
     if (/^AttributeError/.test(msg)) return "Αυτό το αντικείμενο δεν έχει τέτοια μέθοδο. Έλεγξε το όνομα μετά την τελεία.";
     if (/^(SyntaxError|IndentationError|TabError)/.test(msg)) return "Συντακτικό λάθος: έλεγξε άνω-κάτω τελεία, παρενθέσεις και εσοχές σε αυτή ή στην προηγούμενη γραμμή.";
     if (/ENODEV/.test(msg)) return "Σε αυτή τη θύρα δεν υπάρχει τέτοια συσκευή. Δες την κάρτα του ρομπότ (A, B μοτέρ · C, D αισθητήρες).";
+    if (/^NotImplementedError/.test(msg)) return "Αυτή η εντολή δεν υπάρχει ακόμα στον προσομοιωτή.";
     if (/^TypeError/.test(msg)) return "Λάθος ορίσματα: έλεγξε τι (και πόσα) δίνεις μέσα στις παρενθέσεις.";
     return "";
   }
@@ -178,6 +179,9 @@
   async function run() {
     if (running) return;
     if (blocks && !ta.value.trim()) { toast("Φόρτωσε πρώτα το πρόγραμμά σου από το Pybricks"); return; }
+    if (/^\s*async\s+def\b|\bawait\b/m.test(ta.value)) {
+      con.textContent = ""; out("Ο προσομοιωτής δεν υποστηρίζει ακόμα multitasking (async / await, πολλαπλά start blocks, block «multitask»).\nΦτιάξε το πρόγραμμα με ένα μόνο start block, χωρίς multitask.\n", "e"); return;
+    }
     running = true; runs++; renderStats(); errLine = 0; refreshGutter();
     $("btn-run").disabled = true; $("btn-stop").disabled = false;
     sim.setup(); matCache = null;                    // νέο τυχαίο στιγμιότυπο της πρόκλησης
