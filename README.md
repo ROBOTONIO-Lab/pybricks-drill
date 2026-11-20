@@ -41,7 +41,7 @@
   `DriveBase` (straight, turn με `absolute`, arc/curve, drive, stop/brake/hold, distance, angle, state, reset, settings,
   done, stalled, use_gyro, και `wait=False`), `Motor` (run, dc, run_time, run_angle, run_target, track_target,
   run_until_stalled, stop/brake/hold, angle, speed, reset_angle, done, load, stalled, settings, control),
-  `ColorSensor`, `PrimeHub` (light, display με `Icon`, speaker, imu, buttons, battery, charger, system),
+  `ColorSensor`, `PrimeHub` (light, display με `Icon`, speaker με πραγματικό ήχο για `beep` και `play_notes`, imu, buttons, battery, charger, system),
   `wait`, `StopWatch`, `hub_menu`, `Port`, `Direction`, `Color`, `Stop`, `Button`, `Side`, `Axis`, `Icon`, `umath`, `urandom`.
 - Δεν υπάρχουν: multitasking (`async`/`await`, `multitask`, `run_task`), `move_by`, `Car`, αισθητήρες πέρα από τον `ColorSensor`,
   τουβλάκια που σπρώχνονται. Οι επιταχύνσεις, το `then=` και οι ρυθμίσεις PID γίνονται δεκτά αλλά αγνοούνται.

@@ -193,7 +193,7 @@
       this.wDeg = 0; this.vNow = 0;
       this.db = null; this.usedGyro = false;
       this.trail = [[this.x, this.y]]; this._acc = 0;
-      this.light = null; this.pixels = new Array(25).fill(0); this.shown = []; this.beepUntil = 0;
+      this.light = null; this.pixels = new Array(25).fill(0); this.shown = []; this.beepUntil = 0; this.volume = 100;
     }
     stopMotors() { if (this.db) { this.db.active = false; this.db.man = null; } for (const m of [this.motors.A, this.motors.B]) { m.target = 0; m.man = null; } }
     sensorPos(side) {
@@ -348,7 +348,10 @@
             for (const ch of txt) { sim.pixels = glyph(ch); await self.long(a[2]); sim.pixels = new Array(25).fill(0); await self.long(a[3]); }
             return null;
           })(); }
-        case "beep": sim.beepUntil = sim.time + a[2]; return this.long(a[2]).then(() => null);
+        case "beep": sim.beepUntil = sim.time + a[2];      // ήχος: τον παίζει η σελίδα (API.onBeep), εδώ μόνο ο χρόνος
+          if (a[1] > 0 && API.onBeep && isFinite(this.speed)) API.onBeep(a[1], a[2] / this.speed, sim.volume);
+          return this.long(a[2]).then(() => null);
+        case "volume": sim.volume = Math.max(0, Math.min(100, a[1])); return null;
       }
       throw new Error("unknown sim call " + name);
     }
@@ -834,21 +837,50 @@ class _Speaker:
     def beep(self, frequency=500, duration=100):
         _sim.op("beep", frequency, duration)
     def play_notes(self, notes, tempo=120):
+        # νότες όπως "C4/4", "F#3/8", "Bb4/2.", "R/4" (παύση), "E4/4_" (δεμένη)
+        semitones = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
         for note in notes:
             parts = str(note).split("/")
+            name = parts[0]
             value = 4
+            dotted = False
+            tied = False
             if len(parts) > 1:
                 digits = ""
                 for ch in parts[1]:
                     if ch in "0123456789":
                         digits = digits + ch
+                    elif ch == ".":
+                        dotted = True
+                    elif ch == "_":
+                        tied = True
                 if digits != "":
                     value = int(digits)
-            _sim.op("beep", 440, 240000 / tempo / value)
+            duration = 240000 / tempo / value
+            if dotted:
+                duration = duration * 1.5
+            frequency = 0
+            if len(name) >= 2 and name[0] in semitones:
+                n = semitones[name[0]]
+                rest = name[1:]
+                if rest[0] == "#":
+                    n += 1
+                    rest = rest[1:]
+                elif rest[0] == "b":
+                    n -= 1
+                    rest = rest[1:]
+                octave = int(rest)
+                frequency = 440 * 2 ** ((12 * (octave + 1) + n - 69) / 12)
+            if tied or frequency == 0:
+                _sim.op("beep", frequency, duration)
+            else:
+                _sim.op("beep", frequency, duration * 7 / 8)
+                _sim.op("wait", duration / 8)
     def volume(self, volume=None):
         if volume is None:
             return self._volume
         self._volume = volume
+        _sim.op("volume", volume)
 
 class _Light:
     def on(self, color):
@@ -990,13 +1022,23 @@ InventorHub = PrimeHub
   function runProgram(Sk, code, rt, onOutput) {
     install(Sk);
     API.current = rt;
-    Sk.configure({
-      output: onOutput, __future__: Sk.python3, yieldLimit: 40, execLimit: null,
+    const cfg = {
+      output: onOutput, __future__: Sk.python3, execLimit: null,
       read: f => { const v = Sk.builtinFiles.files[f]; if (v === undefined) throw "File not found: '" + f + "'"; return v; }
+    };
+    // Πρώτα φορτώνεται η βιβλιοθήκη χωρίς διακοπές: το Skulpt χάνει το module αν «ανασάνει» (yield) πάνω σε import,
+    // κάτι που συμβαίνει σε αργούς υπολογιστές την πρώτη φορά που μεταγλωττίζεται η βιβλιοθήκη.
+    Sk.configure(Object.assign({ yieldLimit: null }, cfg));
+    const PRELUDE = "import pybricks.hubs\nimport pybricks.pupdevices\nimport pybricks.parameters\nimport pybricks.robotics\nimport pybricks.tools\nimport umath\nimport urandom\nimport math\nimport random\n";
+    return Sk.misceval.asyncToPromise(() => Sk.importMainWithBody("<prelude>", false, PRELUDE, true)).then(() => {
+      Sk.configure(Object.assign({ yieldLimit: API.yieldLimit || 40 }, cfg));
+      // Το πρόγραμμα του μαθητή τρέχει πάνω στα ήδη φορτωμένα modules (χωρίς το reset του importMainWithBody)
+      Sk.sysmodules.pop$item(new Sk.builtin.str("__main__"));
+      Sk.lastYield = Date.now(); Sk.execStart = Date.now();
+      return Sk.misceval.asyncToPromise(
+        () => Sk.importModuleInternal_("<stdin>", false, "__main__", code, undefined, false, true),
+        { "Sk.yield": () => { try { rt.check(); rt.catchUp(); } catch (e) { return Promise.reject(e); } return null; } });
     });
-    return Sk.misceval.asyncToPromise(
-      () => Sk.importMainWithBody("<stdin>", false, code, true),
-      { "Sk.yield": () => { try { rt.check(); rt.catchUp(); } catch (e) { return Promise.reject(e); } return null; } });
   }
 
   const TASKS = [];   // γεμίζει από το js/tasks.js

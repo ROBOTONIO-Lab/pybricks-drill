@@ -175,6 +175,26 @@
     renderSteps(); renderHints(); renderChecks(null); renderStats(); refreshGutter();
   }
 
+  // ───────── Ηχείο του hub (Web Audio) ─────────
+  let audio = null, sound = store.get("sound") !== "off";
+  function renderSound() { const b = $("btn-sound"); b.textContent = sound ? "🔊" : "🔇"; b.setAttribute("aria-pressed", String(sound)); b.title = sound ? "Ήχος: ανοιχτός" : "Ήχος: κλειστός"; }
+  $("btn-sound").addEventListener("click", () => { sound = !sound; store.set("sound", sound ? "on" : "off"); renderSound(); });
+  function wakeAudio() {                             // ο browser επιτρέπει ήχο μόνο μετά από κλικ του χρήστη
+    try { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; if (!audio) audio = new AC(); if (audio.state === "suspended") audio.resume(); } catch (e) { audio = null; }
+  }
+  P.onBeep = (freq, ms, volume) => {
+    if (!sound || !audio || !(freq >= 20 && freq <= 12000)) return;
+    try {
+      const t = audio.currentTime, len = Math.max(0.02, ms / 1000), osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = "square"; osc.frequency.value = freq;
+      const level = 0.07 * Math.max(0, Math.min(100, volume === undefined ? 100 : volume)) / 100;
+      gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(level, t + 0.005);
+      gain.gain.setValueAtTime(level, t + Math.max(0.006, len - 0.01)); gain.gain.linearRampToValueAtTime(0, t + len);
+      osc.connect(gain); gain.connect(audio.destination); osc.start(t); osc.stop(t + len + 0.02);
+      P.beeps = (P.beeps || 0) + 1;
+    } catch (e) { /* χωρίς ήχο */ }
+  };
+
   // ───────── Εκτέλεση ─────────
   async function run() {
     if (running) return;
@@ -182,6 +202,7 @@
     if (/^\s*async\s+def\b|\bawait\b/m.test(ta.value)) {
       con.textContent = ""; out("Ο προσομοιωτής δεν υποστηρίζει ακόμα multitasking (async / await, πολλαπλά start blocks, block «multitask»).\nΦτιάξε το πρόγραμμα με ένα μόνο start block, χωρίς multitask.\n", "e"); return;
     }
+    wakeAudio();
     running = true; runs++; renderStats(); errLine = 0; refreshGutter();
     $("btn-run").disabled = true; $("btn-stop").disabled = false;
     sim.setup(); matCache = null;                    // νέο τυχαίο στιγμιότυπο της πρόκλησης
@@ -331,7 +352,7 @@
   window.addEventListener("resize", fit);
 
   // ───────── Εκκίνηση ─────────
-  applyMode();
+  applyMode(); renderSound();
   setTeacher(teacher, true);
   loadTask(idx);
   drawRobotFigure();
