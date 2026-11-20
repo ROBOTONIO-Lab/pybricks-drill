@@ -12,6 +12,9 @@
     sensorForward: 60,   // mm μπροστά από τον άξονα
     sensorSide: 24,      // mm αριστερά/δεξιά από το κέντρο
     spotRadius: 6,       // mm, «μάτι» αισθητήρα
+    prongLength: 45,     // mm, εξοχή μπροστά από κάθε αισθητήρα
+    driftRight: 0.01,    // ο δεξιός τροχός «χάνει» 1% (το ρομπότ δεν πάει τελείως ευθεία χωρίς γυροσκόπιο)
+    turnScrub: 0.08,     // ολίσθηση στις στροφές: χωρίς γυροσκόπιο το turn(90) βγαίνει ~83°
     motorTau: 60,        // ms, αδράνεια μοτέρ
     maxMotorSpeed: 1000, // deg/s
     ports: {
@@ -56,8 +59,9 @@
   }
 
   function makeMat(def) {
-    const path = buildPath(def.line);
-    const pts = path.pts;
+    const path = def.line ? buildPath(def.line) : null;
+    const pts = path ? path.pts : [];
+    const rect = def.rect || null;
     const at = s => {
       const i = Math.max(0, Math.min(pts.length - 2, Math.floor(s / 2)));
       const a = pts[i], b = pts[i + 1];
@@ -65,7 +69,7 @@
       const f = s / 2 - i;
       return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, th };
     };
-    const marks = def.marks.map(m => {
+    const marks = (def.marks || []).map(m => {
       const s = m.s < 0 ? path.length + m.s : m.s;
       return Object.assign({}, m, { s, c: at(s) });
     });
@@ -86,10 +90,18 @@
       }
       return { d, s };
     }
+    // προσημασμένη απόσταση από τον άξονα της γραμμής του ορθογωνίου (αρνητική = μέσα)
+    function rectSd(x, y) {
+      const qx = Math.abs(x - rect.cx) - rect.w / 2, qy = Math.abs(y - rect.cy) - rect.h / 2;
+      return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+    }
     function rgbAt(x, y, r) {
       if (x < 0 || y < 0 || x > def.width || y > def.height) return RGB.TABLE;
-      const n = nearest(x, y), hw = def.lineWidth / 2;
-      const cl = Math.max(0, Math.min(1, (hw + r - n.d) / (2 * r)));
+      let d = 1e9;
+      if (path) d = nearest(x, y).d;
+      if (rect) d = Math.min(d, Math.abs(rectSd(x, y)));
+      const hw = def.lineWidth / 2;
+      const cl = Math.max(0, Math.min(1, (hw + r - d) / (2 * r)));
       let c = [0, 1, 2].map(k => RGB.WHITE[k] + (RGB.BLACK[k] - RGB.WHITE[k]) * cl);
       for (const m of marks) {
         const dx = x - m.c.x, dy = y - m.c.y, ct = Math.cos(m.c.th), st = Math.sin(m.c.th);
@@ -100,7 +112,8 @@
       }
       return c;
     }
-    return { def, width: def.width, height: def.height, lineWidth: def.lineWidth, pts, length: path.length, marks, at, nearest, rgbAt };
+    return { def, width: def.width, height: def.height, lineWidth: def.lineWidth, pts, rect, hasPath: !!path,
+             length: path ? path.length : 0, marks, at, nearest, rectSd, rgbAt };
   }
 
   function classify(rgb) {
@@ -126,17 +139,23 @@
 
   // ───────────────────────── Φυσική ─────────────────────────
   class Sim {
-    constructor(task) { this.task = task; this.mat = makeMat(task.mat); this.reset(); }
+    constructor(task, rnd) { this.task = task; this.setup(rnd); }
+    setup(rnd) {                       // νέο στιγμιότυπο της πρόκλησης (τυχαίες διαστάσεις)
+      const b = this.task.build(rnd || Math.random);
+      this.mat = makeMat(b.mat); this.start = b.start; this.info = b.info || {};
+      this.reset();
+    }
     reset() {
-      const st = this.task.start;
+      const st = this.start;
       this.x = st.x; this.y = st.y; this.th = st.heading * Math.PI / 180;
       this.th0 = this.th; this.headingZero = 0;
-      this.time = 0; this.odo = 0; this.maxDev = 0; this.maxS = 0;
+      this.time = 0; this.odo = 0; this.maxDev = 0; this.maxS = 0; this.maxOut = -1e9;
       this.motors = { A: { target: 0, speed: 0, angle: 0 }, B: { target: 0, speed: 0, angle: 0 } };
+      this.db = null; this.usedGyro = false;
       this.trail = [[this.x, this.y]]; this._acc = 0;
       this.light = null; this.display = ""; this.beepUntil = 0;
     }
-    stopMotors() { this.motors.A.target = 0; this.motors.B.target = 0; }
+    stopMotors() { if (this.db) this.db.active = false; this.motors.A.target = 0; this.motors.B.target = 0; }
     sensorPos(side) {
       const c = Math.cos(this.th), s = Math.sin(this.th), k = side === "left" ? -1 : side === "right" ? 1 : 0;
       return [this.x + ROBOT.sensorForward * c - k * ROBOT.sensorSide * s,
@@ -147,25 +166,47 @@
       const rgb = this.mat.rgbAt(p[0], p[1], ROBOT.spotRadius);
       return Object.assign({ rgb }, classify(rgb));
     }
-    heading() { return (this.th - this.th0) * 180 / Math.PI - this.headingZero; }
+    gyroDeg() { return (this.th - this.th0) * 180 / Math.PI; }
+    heading() { return this.gyroDeg() - this.headingZero; }
+    dbDistance() { const d = this.db, k = Math.PI * d.wd / 360; return (this.motors[d.lp].angle * d.ld + this.motors[d.rp].angle * d.rd) * k / 2; }
+    dbHeading() {      // τι «νομίζει» το DriveBase για τη γωνία του: γυροσκόπιο ή οδομετρία τροχών
+      const d = this.db; if (d.gyro) return this.gyroDeg();
+      const k = Math.PI * d.wd / 360;
+      return (this.motors[d.lp].angle * d.ld - this.motors[d.rp].angle * d.rd) * k / d.at * 180 / Math.PI;
+    }
     moving() { return Math.abs(this.motors.A.speed) + Math.abs(this.motors.B.speed) > 8; }
     step(dt) {
+      const d = this.db;
+      if (d && d.active) {             // έλεγχος πορείας του DriveBase, όπως στο Pybricks
+        if (d.gyro) this.usedGyro = true;
+        d.target += d.w * dt / 1000;
+        const wc = d.w + 5 * (d.target - this.dbHeading());
+        const k = 360 / (Math.PI * d.wd), diff = wc * Math.PI / 180 * d.at / 2;
+        this.motors[d.lp].target = (d.v + diff) * k * d.ld;
+        this.motors[d.rp].target = (d.v - diff) * k * d.rd;
+      }
       const K = Math.PI * ROBOT.wheelDiameter / 360, a = 1 - Math.exp(-dt / ROBOT.motorTau);
       for (const m of [this.motors.A, this.motors.B]) {
         const tg = Math.max(-ROBOT.maxMotorSpeed, Math.min(ROBOT.maxMotorSpeed, m.target));
         m.speed += (tg - m.speed) * a; m.angle += m.speed * dt / 1000;
       }
-      const vl = -this.motors.A.speed * K, vr = this.motors.B.speed * K;   // A είναι καθρεφτισμένο
-      const v = (vl + vr) / 2, w = (vl - vr) / ROBOT.axleTrack;
+      const vl = -this.motors.A.speed * K, vr = this.motors.B.speed * K * (1 - ROBOT.driftRight);   // A είναι καθρεφτισμένο
+      const v = (vl + vr) / 2, w = (vl - vr) / ROBOT.axleTrack * (1 - ROBOT.turnScrub);
       this.th += w * dt / 1000;
       this.x += v * Math.cos(this.th) * dt / 1000; this.y += v * Math.sin(this.th) * dt / 1000;
       this.odo += v * dt / 1000; this.time += dt;
       this._acc += dt;
       if (this._acc >= 20) {
         this._acc = 0;
-        const p = this.sensorPos("mid"), n = this.mat.nearest(p[0], p[1]);
-        if (n.d > this.maxDev) this.maxDev = n.d;
-        if (n.d < 80 && n.s > this.maxS) this.maxS = n.s;
+        if (this.mat.hasPath) {
+          const p = this.sensorPos("mid"), n = this.mat.nearest(p[0], p[1]);
+          if (n.d > this.maxDev) this.maxDev = n.d;
+          if (n.d < 80 && n.s > this.maxS) this.maxS = n.s;
+        }
+        if (this.mat.rect) for (const sd of ["left", "right"]) {
+          const p = this.sensorPos(sd), o = this.mat.rectSd(p[0], p[1]);
+          if (o > this.maxOut) this.maxOut = o;
+        }
         const l = this.trail[this.trail.length - 1];
         if (Math.hypot(l[0] - this.x, l[1] - this.y) > 4) this.trail.push([this.x, this.y]);
       }
@@ -213,10 +254,14 @@
         case "device": { const d = ROBOT.ports[a[1]]; return d ? d.type : null; }
         case "time": return sim.time;
         case "wait": return a[1] <= 8 ? this.after(Math.max(0, a[1]), null) : this.long(a[1]).then(() => null);
-        case "run": M[a[1]].target = a[2]; return this.after(1, null);
-        case "drive": M[a[1]].target = a[2]; M[a[3]].target = a[4]; return this.after(1, null);
+        case "run": if (sim.db && (a[1] === sim.db.lp || a[1] === sim.db.rp)) sim.db.active = false;
+          M[a[1]].target = a[2]; return this.after(1, null);
+        case "db_init": sim.db = { lp: a[1], ld: a[2], rp: a[3], rd: a[4], wd: a[5], at: a[6], gyro: false, active: false, v: 0, w: 0, target: 0 }; return null;
+        case "db_gyro": sim.db.gyro = !!a[1]; sim.db.target = sim.dbHeading(); return null;
+        case "db_state": return this.after(1, [sim.dbDistance(), sim.dbHeading()]);
+        case "drive": { const d = sim.db; if (!d.active) { d.target = sim.dbHeading(); d.active = true; } d.v = a[1]; d.w = a[2]; return this.after(1, null); }
+        case "db_stop": sim.db.active = false; M[sim.db.lp].target = 0; M[sim.db.rp].target = 0; return this.after(1, null);
         case "angle": return this.after(1, M[a[1]].angle);
-        case "angles": return this.after(1, [M[a[1]].angle, M[a[2]].angle]);
         case "speed": return this.after(1, M[a[1]].speed);
         case "color": return this.after(1, sim.read(a[1]).name);
         case "reflection": return this.after(1, sim.read(a[1]).reflection);
@@ -441,40 +486,29 @@ import _sim
 from pybricks.parameters import Stop
 from pybricks.pupdevices import Motor
 
-_PI = 3.141592653589793
-
 class DriveBase:
     def __init__(self, left_motor, right_motor, wheel_diameter, axle_track):
         if not isinstance(left_motor, Motor) or not isinstance(right_motor, Motor):
             raise TypeError("DriveBase needs two Motor objects: DriveBase(left_motor, right_motor, wheel_diameter, axle_track)")
         if left_motor._p == right_motor._p:
             raise ValueError("left_motor and right_motor must be different motors")
-        self._l = left_motor
-        self._r = right_motor
-        self._wd = wheel_diameter
-        self._at = axle_track
         self._ss = 200
         self._tr = 150
         self._d0 = 0
         self._a0 = 0
+        _sim.op("db_init", left_motor._p, left_motor._d, right_motor._p, right_motor._d, wheel_diameter, axle_track)
         self.reset()
-    def _raw(self):
-        v = _sim.op("angles", self._l._p, self._r._p)
-        k = _PI * self._wd / 360
-        dl = v[0] * self._l._d * k
-        dr = v[1] * self._r._d * k
-        return ((dl + dr) / 2, (dl - dr) / self._at * 180 / _PI)
     def reset(self, distance=0, angle=0):
-        r = self._raw()
-        self._d0 = r[0] - distance
-        self._a0 = r[1] - angle
+        s = _sim.op("db_state")
+        self._d0 = s[0] - distance
+        self._a0 = s[1] - angle
     def distance(self):
-        return int(round(self._raw()[0] - self._d0))
+        return int(round(_sim.op("db_state")[0] - self._d0))
     def angle(self):
-        return int(round(self._raw()[1] - self._a0))
+        return int(round(_sim.op("db_state")[1] - self._a0))
     def state(self):
-        r = self._raw()
-        return (int(round(r[0] - self._d0)), 0, int(round(r[1] - self._a0)), 0)
+        s = _sim.op("db_state")
+        return (int(round(s[0] - self._d0)), 0, int(round(s[1] - self._a0)), 0)
     def settings(self, straight_speed=None, straight_acceleration=None, turn_rate=None, turn_acceleration=None):
         if straight_speed is not None:
             self._ss = straight_speed
@@ -482,42 +516,42 @@ class DriveBase:
             self._tr = turn_rate
         return (self._ss, 500, self._tr, 500)
     def use_gyro(self, use_gyro):
-        pass
+        a = _sim.op("db_state")[1] - self._a0
+        _sim.op("db_gyro", use_gyro)
+        self._a0 = _sim.op("db_state")[1] - a
     def done(self):
         return True
     def drive(self, speed, turn_rate):
-        k = 360 / (_PI * self._wd)
-        diff = turn_rate * _PI / 180 * self._at / 2
-        _sim.op("drive", self._l._p, (speed + diff) * k * self._l._d, self._r._p, (speed - diff) * k * self._r._d)
+        _sim.op("drive", speed, turn_rate)
     def stop(self):
-        _sim.op("drive", self._l._p, 0, self._r._p, 0)
+        _sim.op("db_stop")
     def brake(self):
-        self.stop()
+        _sim.op("db_stop")
     def straight(self, distance, then=Stop.HOLD, wait=True):
-        target = self._raw()[0] + distance
+        target = _sim.op("db_state")[0] + distance
         while True:
-            rem = target - self._raw()[0]
+            rem = target - _sim.op("db_state")[0]
             if abs(rem) < 1:
                 break
             v = min(self._ss, max(25, abs(rem) * 5))
             if rem < 0:
                 v = -v
-            self.drive(v, 0)
+            _sim.op("drive", v, 0)
             _sim.op("wait", 4)
-        self.stop()
+        _sim.op("db_stop")
         _sim.op("wait", 150)
     def turn(self, angle, then=Stop.HOLD, wait=True):
-        target = self._raw()[1] + angle
+        target = _sim.op("db_state")[1] + angle
         while True:
-            rem = target - self._raw()[1]
+            rem = target - _sim.op("db_state")[1]
             if abs(rem) < 0.7:
                 break
             w = min(self._tr, max(15, abs(rem) * 6))
             if rem < 0:
                 w = -w
-            self.drive(0, w)
+            _sim.op("drive", 0, w)
             _sim.op("wait", 4)
-        self.stop()
+        _sim.op("db_stop")
         _sim.op("wait", 150)
 `;
   PY["pybricks/hubs.py"] = `
@@ -626,78 +660,7 @@ InventorHub = PrimeHub
       { "Sk.yield": () => { try { rt.check(); rt.catchUp(); } catch (e) { return Promise.reject(e); } return null; } });
   }
 
-  // ───────────────────────── Αποστολές (ΠΡΟΣΘΕΣΕ ΕΔΩ νέες) ─────────────────────────
-  const TASKS = [{
-    id: "line-until-red",
-    title: "Ακολούθησε τη γραμμή μέχρι το ΚΟΚΚΙΝΟ και μέτρα απόσταση",
-    steps: [
-      "Αρχικοποίηση: δύο μοτέρ, δύο αισθητήρες χρώματος, DriveBase.",
-      "Ακολούθησε την άκρη της μαύρης γραμμής με τον <b>αριστερό</b> αισθητήρα (αναλογικός έλεγχος).",
-      "Σταμάτα όταν ο <b>δεξιός</b> αισθητήρας δει <b>κόκκινο</b> — όχι στο πράσινο.",
-      "Τύπωσε με <code>print</code> την απόσταση που διένυσε το ρομπότ (mm)."
-    ],
-    timeLimit: 45000,
-    mat: {
-      width: 1500, height: 900, lineWidth: 20,
-      line: [[110, 750], [430, 750], [660, 700], [790, 560], [840, 400], [950, 265], [1120, 215], [1290, 290], [1350, 460], [1320, 640], [1320, 760]],
-      marks: [{ s: 760, color: "GREEN", length: 40, width: 150 }, { s: -90, color: "RED", length: 40, width: 150 }]
-    },
-    start: { x: 130, y: 764, heading: 0 },
-    // Αρχικό περιεχόμενο του editor: το πρότυπο νέου αρχείου του Pybricks Code για SPIKE Prime
-    starter: `from pybricks.hubs import PrimeHub
-from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor, ForceSensor
-from pybricks.parameters import Button, Color, Direction, Port, Side, Stop
-from pybricks.robotics import DriveBase
-from pybricks.tools import wait, StopWatch
-
-hub = PrimeHub()
-
-`,
-    solution: `from pybricks.hubs import PrimeHub
-from pybricks.pupdevices import Motor, ColorSensor, UltrasonicSensor, ForceSensor
-from pybricks.parameters import Button, Color, Direction, Port, Side, Stop
-from pybricks.robotics import DriveBase
-from pybricks.tools import wait, StopWatch
-
-hub = PrimeHub()
-
-# --- Αρχικοποίηση ---
-left_motor = Motor(Port.A, Direction.COUNTERCLOCKWISE)
-right_motor = Motor(Port.B)
-left_sensor = ColorSensor(Port.C)
-right_sensor = ColorSensor(Port.D)
-robot = DriveBase(left_motor, right_motor, wheel_diameter=56, axle_track=112)
-
-# --- Σταθερές ---
-TARGET = 50
-KP = 1.5
-SPEED = 150
-
-# --- Ακολουθία άκρης γραμμής μέχρι το κόκκινο ---
-robot.reset()
-while True:
-    error = left_sensor.reflection() - TARGET
-    robot.drive(SPEED, KP * error)
-    if right_sensor.color() == Color.RED:
-        break
-robot.stop()
-
-# --- Απόσταση που διανύθηκε ---
-print(robot.distance())
-`,
-    evaluate(sim, run) {
-      const red = sim.mat.marks.find(m => m.color === "RED");
-      const onRed = ["C", "D"].some(p => sim.read(p).name === "RED");
-      const nums = (run.output.match(/-?\d+(\.\d+)?/g) || []).map(Number);
-      const distOk = nums.some(n => Math.abs(n - sim.odo) <= 25);
-      return [
-        { ok: run.finished, text: "Το πρόγραμμα έτρεξε και τελείωσε χωρίς σφάλμα" },
-        { ok: sim.maxS > red.s - 60 && sim.maxDev < 60, text: "Το ρομπότ ακολούθησε τη γραμμή χωρίς να τη χάσει" },
-        { ok: run.finished && onRed && !sim.moving(), text: "Σταμάτησε πάνω στο κόκκινο" },
-        { ok: run.finished && distOk, text: "Τύπωσε τη σωστή απόσταση (±25 mm)" }
-      ];
-    }
-  }];
+  const TASKS = [];   // γεμίζει από το js/tasks.js
 
   const API = { ROBOT, RGB, TASKS, Sim, Runtime, StopSignal, TimeoutSignal, runProgram, classify, current: null };
   root.PBSIM = API;

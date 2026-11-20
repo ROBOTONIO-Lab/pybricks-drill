@@ -1,11 +1,11 @@
-# Pybricks απέξω — ROBOTONIO UML
+# Προκλήσεις Pybricks — ROBOTONIO UML
 
-Σελίδα εξάσκησης: ο μαθητής γράφει από μνήμης κώδικα Pybricks και τον βλέπει να τρέχει
-σε προσομοιωμένο SPIKE Prime (2 μοτέρ, 2 αισθητήρες χρώματος) πάνω σε πίστα.
-Στατική σελίδα, χωρίς server και χωρίς build.
+Σελίδα εξάσκησης: ο μαθητής γράφει κώδικα Pybricks και τον βλέπει να τρέχει σε προσομοιωμένο SPIKE Prime
+(2 μοτέρ, 2 αισθητήρες χρώματος, γυροσκόπιο) σε μια σειρά προκλήσεων αυξανόμενης δυσκολίας.
+Ο κώδικας μένει ο ίδιος από πρόκληση σε πρόκληση. Στατική σελίδα, χωρίς server και χωρίς build.
 
 ## Δημοσίευση σε GitHub Pages
-1. Νέο repository (π.χ. `pybricks-drill`) και ανέβασμα όλων των αρχείων του φακέλου στη ρίζα του.
+1. Νέο public repository (π.χ. `pybricks-drill`) και ανέβασμα όλων των αρχείων του φακέλου στη ρίζα του.
 2. Settings → Pages → Source: «Deploy from a branch» → Branch `main`, φάκελος `/ (root)` → Save.
 3. Σε 1–2 λεπτά η σελίδα είναι στο `https://<org>.github.io/pybricks-drill/`.
 
@@ -13,21 +13,26 @@
 
 ## Αρχεία
 - `index.html` — σελίδα και εμφάνιση
-- `js/sim.js` — ρομπότ (`ROBOT`), πίστα, φυσική, βιβλιοθήκη `pybricks`, αποστολές (`TASKS`)
-- `js/app.js` — editor, καμβάς, έλεγχος αποστολής
+- `js/tasks.js` — **οι προκλήσεις**: περιγραφή, πίστα, υποδείξεις, λύση, κριτήρια επιτυχίας
+- `js/sim.js` — ρομπότ (`ROBOT`), φυσική, πίστα, βιβλιοθήκη `pybricks`
+- `js/app.js` — editor, καμβάς, βήματα, υποδείξεις
 - `lib/` — Skulpt 1.2.0 (Python στον browser, άδεια MIT)
 
-## Αλλαγές
-- **Ρομπότ:** αντικείμενο `ROBOT` στην αρχή του `js/sim.js` (θύρες, διάμετρος τροχού, μετατρόχιο, θέση αισθητήρων).
-- **Νέα αποστολή:** νέο αντικείμενο στον πίνακα `TASKS` του `js/sim.js` — σημεία γραμμής (mm), χρωματιστά σημάδια,
-  θέση εκκίνησης, `starter` (αρχικό περιεχόμενο του editor) και `solution`, και συνάρτηση `evaluate` με τα κριτήρια επιτυχίας.
-  (Η σελίδα δείχνει προς το παρόν την πρώτη αποστολή του πίνακα.)
-
-## Τι υποστηρίζει ο προσομοιωτής
-`PrimeHub` (light, display, speaker.beep, imu.heading), `Motor` (run, dc, stop, brake, hold, angle, speed,
-reset_angle, run_time, run_angle, run_target), `ColorSensor` (color, reflection, hsv, ambient),
-`DriveBase` (drive, stop, brake, straight, turn, distance, angle, reset, settings, state),
-`wait`, `StopWatch`, `Port`, `Direction`, `Color`, `Stop`, `Button`.
+## Νέα πρόκληση
+Προσθέστε ένα αντικείμενο στον πίνακα `TASKS` του `js/tasks.js`:
+`title`, `desc` (HTML), `build(rnd)` που επιστρέφει πίστα και θέση εκκίνησης (με `rnd()` για τυχαίες διαστάσεις),
+`hints` (εμφανίζονται μία-μία), `solution`, `evaluate(sim, run)` που επιστρέφει τους ελέγχους.
+Η πίστα περιγράφεται με `rect` (ορθογώνιο από γραμμή), `line` (καμπύλη από σημεία) και `marks` (χρωματιστά σημάδια).
 
 ## Λειτουργία καθηγητή
-Προσθέστε `?teacher=1` στη διεύθυνση ή κάντε **διπλό κλικ στο «ROBOTONIO · UML»** πάνω αριστερά (εναλλακτικά Ctrl+Shift+L): επιτρέπεται η επικόλληση και εμφανίζεται κουμπί «Φόρτωσε λύση».
+`?teacher=1` στη διεύθυνση, ή διπλό κλικ στο «ROBOTONIO · UML» πάνω αριστερά (εναλλακτικά Ctrl+Shift+L):
+επιτρέπεται η επικόλληση, εμφανίζεται «Φόρτωσε λύση» και ξεκλειδώνουν όλες οι προκλήσεις.
+
+## Τι προσομοιώνεται
+- Το ρομπότ δεν είναι ιδανικό: ο δεξιός τροχός χάνει 1% και στις στροφές υπάρχει 8% ολίσθηση
+  (`driftRight`, `turnScrub` στο `ROBOT`). Χωρίς `use_gyro(True)` το `turn(90)` βγαίνει περίπου 83°.
+- `PrimeHub` (light, display, speaker.beep, imu.heading/reset_heading), `Motor` (run, dc, stop, brake, hold, angle,
+  speed, reset_angle, run_time, run_angle, run_target), `ColorSensor` (color, reflection, hsv, ambient),
+  `DriveBase` (drive, stop, brake, straight, turn, distance, angle, reset, settings, state, use_gyro),
+  `wait`, `StopWatch`, `Port`, `Direction`, `Color`, `Stop`, `Button`, `Side`.
+- Δεν υπάρχουν ακόμα: τουβλάκια που σπρώχνονται, `curve`, `multitask`, `UltrasonicSensor`, blocks.
