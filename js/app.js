@@ -11,8 +11,9 @@
   const clampIdx = n => Math.max(0, Math.min(TASKS.length - 1, n | 0));
 
   let idx = clampIdx(Number(store.get("current")) || 0);
-  let unlocked = Math.max(0, Math.min(TASKS.length, Number(store.get("unlocked")) | 0));   // πόσες προκλήσεις έχουν λυθεί
-  if (idx > unlocked) idx = clampIdx(unlocked);
+  // Όλες οι προκλήσεις είναι ανοιχτές από την αρχή· κρατάμε μόνο ποιες έχουν λυθεί, για το ✔
+  let done = [];
+  try { done = JSON.parse(store.get("done") || "[]").filter(id => TASKS.some(t => t.id === id)); } catch (e) { done = []; }
   let task = TASKS[idx], sim = new P.Sim(task), rt = null, running = false;
   let runs = 0, taskStart = Date.now(), taskStop = null, solved = false;
   const hintsShown = TASKS.map(() => 0);
@@ -111,7 +112,7 @@
   let teacher = new URLSearchParams(location.search).has("teacher");
   function setTeacher(on, quiet) {
     teacher = on; $("btn-solution").hidden = !on; renderSteps();
-    if (!quiet) toast(on ? "Λειτουργία καθηγητή: επικόλληση, λύσεις, όλες οι προκλήσεις" : "Λειτουργία μαθητή");
+    if (!quiet) toast(on ? "Λειτουργία καθηγητή: επικόλληση και λύσεις" : "Λειτουργία μαθητή");
   }
   document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyL") { e.preventDefault(); setTeacher(!teacher); } });
   document.querySelector("header .brand").addEventListener("dblclick", () => setTeacher(!teacher));
@@ -145,9 +146,9 @@
   function renderSteps() {
     const nav = $("steps"); nav.innerHTML = "";
     TASKS.forEach((t, i) => {
-      const b = document.createElement("button"), open = teacher || i <= unlocked;
-      b.textContent = (i < unlocked ? "✔ " : open ? "" : "🔒 ") + "Πρόκληση " + (i + 1);
-      b.disabled = !open; if (i < unlocked) b.classList.add("done");
+      const b = document.createElement("button"), ok = done.includes(t.id);
+      b.textContent = (ok ? "✔ " : "") + "Πρόκληση " + (i + 1);
+      b.title = t.title; if (ok) b.classList.add("done");
       if (i === idx) b.setAttribute("aria-current", "step");
       b.addEventListener("click", () => { if (!running) loadTask(i); });
       nav.appendChild(b);
@@ -204,7 +205,7 @@
     }
     wakeAudio();
     running = true; runs++; renderStats(); errLine = 0; refreshGutter();
-    $("btn-run").disabled = true; $("btn-stop").disabled = false;
+    $("btn-run").disabled = true; $("btn-stop").disabled = false; $("btn-reset").disabled = true;
     sim.setup(); matCache = null;                    // νέο τυχαίο στιγμιότυπο της πρόκλησης
     con.textContent = ""; renderChecks(null); $("banner").classList.remove("on");
     rt = new P.Runtime(sim, { speed: Number($("speed").value) });
@@ -232,15 +233,19 @@
     if (checks.every(c => c.ok)) {
       if (!solved) { solved = true; taskStop = Date.now(); }
       const last = idx === TASKS.length - 1;
-      if (unlocked < idx + 1) { unlocked = idx + 1; store.set("unlocked", unlocked); }
+      if (!done.includes(task.id)) { done.push(task.id); store.set("done", JSON.stringify(done)); }
       $("banner-text").textContent = (last ? "Τις έβγαλες όλες! " : "Πέτυχες! ") + "Χρόνος " + mmss(taskMs()) + " · υποδείξεις " + hintsShown[idx] + " · εκτελέσεις " + runs;
       $("btn-next").hidden = last;
       $("banner").classList.add("on"); renderSteps();
     }
-    running = false; rt = null; $("btn-run").disabled = false; $("btn-stop").disabled = true; renderStats();
+    running = false; rt = null; $("btn-run").disabled = false; $("btn-stop").disabled = true; $("btn-reset").disabled = false; renderStats();
   }
   $("btn-run").addEventListener("click", run);
   $("btn-stop").addEventListener("click", () => { if (rt) rt.stopFlag = true; });
+  $("btn-reset").addEventListener("click", () => {   // το ρομπότ ξανά στη θέση εκκίνησης, στην ίδια πίστα
+    if (running) return;
+    sim.reset(); renderChecks(null); $("banner").classList.remove("on");
+  });
   $("speed").addEventListener("change", () => { if (rt) { rt.speed = Number($("speed").value); rt.resync(); } });
   $("btn-next").addEventListener("click", () => { if (!running && idx < TASKS.length - 1) { loadTask(idx + 1); $("task-title").scrollIntoView({ block: "start" }); } });
 
