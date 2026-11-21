@@ -392,9 +392,11 @@
     for (const k of [-1, 1]) { g.fillStyle = "#9aa1ad"; rr(g, 20, k * ss - 4.5, sf - 26, 9, 2); g.fill(); }   // βραχίονες αισθητήρων
     g.fillStyle = "#4a5160"; rr(g, f0 - 10, -fs - 5, 10, 2 * fs + 10, 3); g.fill();                 // πλάτη πιρουνιού
     for (const k of [-1, 1]) { rr(g, f0 - 4, k * fs - 5, R.forkLength + 4, 10, 4); g.fill(); }      // δόντια
-    const ga = Math.max(0, Math.min(120, gateDeg || 0)) * Math.PI / 180;                           // καπάκι: άρθρωση στο αριστερό δόντι
-    g.strokeStyle = "#e0a400"; g.lineWidth = 7; g.lineCap = "round";
-    g.beginPath(); g.moveTo(tip - 4, -fs); g.lineTo(tip - 4 + 2 * fs * Math.cos(ga), -fs + 2 * fs * Math.sin(ga)); g.stroke(); g.lineCap = "butt";
+    // καπάκι: όρθιο στις 0° (από πάνω φαίνεται μόνο η άρθρωση στο αριστερό δόντι), πέφτει και κλείνει το στόμιο στις 90°
+    const ga = Math.max(0, Math.min(180, gateDeg || 0)) * Math.PI / 180, glen = 2 * fs * Math.sin(ga);
+    g.fillStyle = "#e0a400"; rr(g, tip - 9, -fs - 6, 10, 12, 3); g.fill();
+    if (Math.abs(glen) > 2) { g.strokeStyle = "#e0a400"; g.lineWidth = 7; g.lineCap = "round";
+      g.beginPath(); g.moveTo(tip - 4, -fs); g.lineTo(tip - 4, -fs + glen); g.stroke(); g.lineCap = "butt"; }
     for (const k of [-1, 1]) {                                                                      // τροχοί
       g.fillStyle = "#20242c"; rr(g, -R.wheelDiameter / 2, k * half - 13, R.wheelDiameter, 26, 7); g.fill();
       g.fillStyle = "#35b6c4"; rr(g, -10, k * half - 5, 20, 10, 3); g.fill();
