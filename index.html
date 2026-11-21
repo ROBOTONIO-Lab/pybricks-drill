@@ -63,6 +63,7 @@
   .chip i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0003; display: inline-block; }
   .hubwrap { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-left: 8px; }
   canvas#hubdisp { width: 46px; height: 46px; border-radius: 6px; display: block; }
+  .tip { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
   canvas#mat { width: 100%; display: block; border-radius: 6px; background: #96826a; }
   button.btn { border: 1px solid var(--ink); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
   button.btn:hover:not(:disabled) { background: #efe9da; }
@@ -157,13 +158,14 @@
     <div class="toolbar">
       <button class="btn run" id="btn-run" title="Ctrl+Enter">▶ Εκτέλεση</button>
       <button class="btn" id="btn-stop" disabled>■ Στοπ</button>
-      <button class="btn" id="btn-reset" title="Βάζει ξανά το ρομπότ στη θέση εκκίνησης">⟲ Επαναφορά ρομπότ</button>
+      <button class="btn" id="btn-reset" title="Βάζει ξανά το ρομπότ στην αρχική θέση της πρόκλησης">⟲ Επαναφορά ρομπότ</button>
       <label for="speed" style="font-size:13px;color:var(--muted)">Ταχύτητα</label>
       <select id="speed"><option value="1">×1</option><option value="2" selected>×2</option><option value="4">×4</option></select>
       <button class="btn" id="btn-sound" aria-label="Ήχος του hub">🔊</button>
       <span class="hubwrap" title="Η οθόνη 5×5 του hub"><canvas id="hubdisp" width="100" height="100" role="img" aria-label="Οθόνη 5×5 του hub"></canvas><span>οθόνη hub</span></span>
       <div class="telemetry" id="telemetry"></div>
     </div>
+    <p class="tip">Σύρε το ρομπότ με το ποντίκι για να το μετακινήσεις. Σύρε τη μπλε λαβή μπροστά του (ή γύρνα τη ροδέλα πάνω του) για να το περιστρέψεις· με Shift γυρίζει ανά 15°.</p>
     <canvas id="mat" width="1600" height="760" role="img" aria-label="Πίστα με το προσομοιωμένο ρομπότ SPIKE Prime"></canvas>
   </section>
 

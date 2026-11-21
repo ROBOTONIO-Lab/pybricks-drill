@@ -168,7 +168,7 @@
   }
   function loadTask(i) {
     idx = clampIdx(i); task = TASKS[idx]; store.set("current", idx);
-    sim = new P.Sim(task); matCache = null; fit();
+    sim = new P.Sim(task); matCache = null; fit(); placed = null; homeStart = sim.start;
     runs = 0; taskStart = Date.now(); taskStop = null; solved = false; errLine = 0;
     $("task-title").textContent = "Πρόκληση " + (idx + 1) + " · " + task.title;
     $("task-desc").innerHTML = task.desc;
@@ -196,6 +196,47 @@
     } catch (e) { /* χωρίς ήχο */ }
   };
 
+  // ───────── Τοποθέτηση του ρομπότ με το ποντίκι: σύρσιμο = μετακίνηση, λαβή ή ροδέλα = περιστροφή ─────────
+  let placed = null, homeStart = null, drag = null;
+  const board = $("mat");
+  const HANDLE = 150;                                // mm μπροστά από το κέντρο του ρομπότ
+  function toMat(e) { const r = board.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * sim.mat.width, (e.clientY - r.top) / r.height * sim.mat.height]; }
+  function hit(pt) {
+    const hx = sim.x + HANDLE * Math.cos(sim.th), hy = sim.y + HANDLE * Math.sin(sim.th);
+    if (Math.hypot(pt[0] - hx, pt[1] - hy) <= 30) return "rotate";
+    const dx = pt[0] - sim.x, dy = pt[1] - sim.y, c = Math.cos(sim.th), sn = Math.sin(sim.th);
+    const u = dx * c + dy * sn, v = -dx * sn + dy * c;   // στο σύστημα του ρομπότ
+    return (u > -70 && u < 120 && Math.abs(v) < 75) ? "move" : null;
+  }
+  function place(x, y, th) {
+    const m = sim.mat;
+    placed = { x: Math.max(0, Math.min(m.width, x)), y: Math.max(0, Math.min(m.height, y)), heading: th * 180 / Math.PI };
+    sim.start = placed; sim.reset(); renderChecks(null); $("banner").classList.remove("on");
+  }
+  board.addEventListener("pointerdown", e => {
+    if (running || e.button > 0) return;
+    const pt = toMat(e), h = hit(pt); if (!h) return;
+    e.preventDefault(); board.setPointerCapture(e.pointerId);
+    drag = { mode: h, ox: pt[0] - sim.x, oy: pt[1] - sim.y }; board.style.cursor = "grabbing";
+  });
+  board.addEventListener("pointermove", e => {
+    const pt = toMat(e);
+    if (!drag) { if (!running) { const h = hit(pt); board.style.cursor = h === "rotate" ? "crosshair" : h ? "grab" : ""; } return; }
+    if (running) { drag = null; return; }
+    if (drag.mode === "move") place(pt[0] - drag.ox, pt[1] - drag.oy, sim.th);
+    else {
+      let th = Math.atan2(pt[1] - sim.y, pt[0] - sim.x);
+      if (e.shiftKey) th = Math.round(th / (Math.PI / 12)) * (Math.PI / 12);   // Shift: βήματα 15°
+      place(sim.x, sim.y, th);
+    }
+  });
+  const endDrag = e => { if (drag) { drag = null; board.style.cursor = ""; try { board.releasePointerCapture(e.pointerId); } catch (err) { /* ok */ } } };
+  board.addEventListener("pointerup", endDrag); board.addEventListener("pointercancel", endDrag);
+  board.addEventListener("wheel", e => {                // ροδέλα πάνω στο ρομπότ: περιστροφή ανά 5°
+    if (running || !hit(toMat(e))) return;
+    e.preventDefault(); place(sim.x, sim.y, sim.th + Math.sign(e.deltaY) * 5 * Math.PI / 180);
+  }, { passive: false });
+
   // ───────── Εκτέλεση ─────────
   async function run() {
     if (running) return;
@@ -207,6 +248,7 @@
     running = true; runs++; renderStats(); errLine = 0; refreshGutter();
     $("btn-run").disabled = true; $("btn-stop").disabled = false; $("btn-reset").disabled = true;
     sim.setup(); matCache = null;                    // νέο τυχαίο στιγμιότυπο της πρόκλησης
+    if (placed) { sim.start = placed; sim.reset(); } // ...αλλά από τη θέση όπου έβαλε ο χρήστης το ρομπότ
     con.textContent = ""; renderChecks(null); $("banner").classList.remove("on");
     rt = new P.Runtime(sim, { speed: Number($("speed").value) });
     const result = { output: "", finished: false };
@@ -244,6 +286,7 @@
   $("btn-stop").addEventListener("click", () => { if (rt) rt.stopFlag = true; });
   $("btn-reset").addEventListener("click", () => {   // το ρομπότ ξανά στη θέση εκκίνησης, στην ίδια πίστα
     if (running) return;
+    if (placed) { placed = null; sim.start = homeStart; }
     sim.reset(); renderChecks(null); $("banner").classList.remove("on");
   });
   $("speed").addEventListener("change", () => { if (rt) { rt.speed = Number($("speed").value); rt.resync(); } });
@@ -337,6 +380,13 @@
     }
     const c = sim.read("C"), d = sim.read("D");
     drawRobot(ctx, sim.x, sim.y, sim.th, [c.rgb, d.rgb], sim.light, sim.pixels);
+    if (!running) {                                  // λαβή περιστροφής
+      const hx = sim.x + HANDLE * Math.cos(sim.th), hy = sim.y + HANDLE * Math.sin(sim.th);
+      ctx.strokeStyle = "rgba(11,107,203,.6)"; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+      ctx.beginPath(); ctx.moveTo(sim.x + 118 * Math.cos(sim.th), sim.y + 118 * Math.sin(sim.th)); ctx.lineTo(hx, hy); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#0b6bcb"; ctx.beginPath(); ctx.arc(hx, hy, 13, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy, 6, 0.6, 5.2); ctx.stroke();
+    }
     const key = sim.pixels.join("");
     if (frame.px !== key) {                          // η οθόνη του hub σε μεγέθυνση, όρθια
       frame.px = key; const hc = $("hubdisp"), hg = hc.getContext("2d"), u = hc.width / 5;
@@ -350,6 +400,7 @@
     const chip = (name, r) => '<span class="chip">' + name + ' <i style="background:' + css(r.rgb) + '"></i>' + r.name.padEnd(6, " ") + " " + String(r.reflection).padStart(3, " ") + "%</span>";
     const html = chip("C", c) + chip("D", d) +
       '<span class="chip">γυροσκόπιο ' + String(Math.round(sim.heading())).padStart(4, " ") + "°</span>" +
+      '<span class="chip">θέση ' + String(Math.round(sim.x)).padStart(4, "\u00a0") + "," + String(Math.round(sim.y)).padStart(4, "\u00a0") + " ·" + String(Math.round(((sim.th * 180 / Math.PI) % 360 + 360) % 360)).padStart(4, "\u00a0") + "°</span>" +
       '<span class="chip">χρόνος ' + (sim.time / 1000).toFixed(1).padStart(5, " ") + " s</span>";
     if (frame.last !== html) { $("telemetry").innerHTML = html; frame.last = html; }
     requestAnimationFrame(frame);
