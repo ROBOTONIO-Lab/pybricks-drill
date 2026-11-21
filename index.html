@@ -36,9 +36,9 @@
 
   /* Κάρτα ρομπότ */
   details.robot > summary { cursor: pointer; font-weight: 700; font-size: 16px; list-style-position: inside; }
-  .robot-body { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 8px 24px; align-items: center; margin-top: 8px; }
+  .robot-body { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 8px 24px; align-items: center; margin-top: 8px; }
   @media (max-width: 760px) { .robot-body { grid-template-columns: minmax(0, 1fr); } }
-  canvas#robotfig { width: 300px; height: 275px; max-width: 100%; }
+  canvas#robotfig { width: 320px; height: 300px; max-width: 100%; }
   .ports { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 6px 20px; margin: 0; padding: 0; list-style: none; }
   .ports b { font-family: var(--mono); background: var(--hub); padding: 0 7px; border-radius: 4px; margin-right: 8px; }
   .ports span { color: var(--muted); }
@@ -82,6 +82,11 @@
   .checks li::before { content: "○"; position: absolute; left: 2px; }
   .checks li.ok { color: var(--ok); font-weight: 600; } .checks li.ok::before { content: "✔"; }
   .checks li.bad { color: var(--bad); } .checks li.bad::before { content: "✘"; }
+  .checks.score { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 2px 28px; }
+  .checks.score li { display: flex; gap: 12px; justify-content: space-between; border-bottom: 1px dotted var(--rule); padding: 3px 0 3px 22px; }
+  .checks.score li b { font-family: var(--mono); white-space: nowrap; }
+  .checks.score li.total { font-weight: 800; color: var(--ink); border-bottom: 0; }
+  .checks.score li.total::before { content: "Σ"; }
   .banner { display: none; width: 100%; padding: 10px 14px; border-radius: 8px; background: var(--ok); color: #fff; font-weight: 600; align-items: center; gap: 14px; flex-wrap: wrap; }
   .banner.on { display: flex; }
   .banner span { flex: 1; min-width: 200px; }
@@ -126,20 +131,21 @@
   <details class="card robot" id="robot-card" open>
     <summary>Το ρομπότ σου</summary>
     <div class="robot-body">
-      <canvas id="robotfig" width="300" height="275" role="img" aria-label="Κάτοψη του ρομπότ με τις θύρες A, B, C, D"></canvas>
+      <canvas id="robotfig" width="320" height="300" role="img" aria-label="Κάτοψη του ρομπότ με τις θύρες A έως F"></canvas>
       <div>
         <ul class="ports">
-          <li><b>A</b>αριστερό μοτέρ <span>(κοιτάει ανάποδα)</span></li>
-          <li><b>B</b>δεξί μοτέρ</li>
+          <li><b>A</b>αριστερό μοτέρ κίνησης <span>(κοιτάει ανάποδα)</span></li>
+          <li><b>B</b>δεξί μοτέρ κίνησης</li>
           <li><b>C</b>αριστερός αισθητήρας χρώματος</li>
           <li><b>D</b>δεξιός αισθητήρας χρώματος</li>
-          <li><b>E</b><span>ελεύθερη</span></li>
-          <li><b>F</b><span>ελεύθερη</span></li>
+          <li><b>E</b>μοτέρ για το καπάκι του πιρουνιού <span>(0° ανοιχτό · 90° κλειστό)</span></li>
+          <li><b>F</b>μοτέρ για τη δοκό <span>(0° μπροστά · 90° δεξιά · −90° αριστερά)</span></li>
         </ul>
         <ul class="specs">
-          <li>Ρόδες διαμέτρου <b>56 mm</b>, μετατρόχιο <b>112 mm</b>.</li>
-          <li>Οι αισθητήρες κοιτάνε κάτω, 60 mm μπροστά από τον άξονα των τροχών και 48 mm ο ένας από τον άλλον.</li>
-          <li>Μπροστά από κάθε αισθητήρα υπάρχει μια εξοχή, για να σπρώχνει τουβλάκια.</li>
+          <li>Ρόδες διαμέτρου <b>64,2 mm</b>, μετατρόχιο <b>112 mm</b>.</li>
+          <li>Οι αισθητήρες κοιτάνε κάτω, 60 mm μπροστά από τον άξονα των τροχών και 52 mm ο ένας από τον άλλον.</li>
+          <li>Μπροστά έχει πιρούνι που χωράει δύο κύβους στη σειρά. Με κλειστό καπάκι, ό,τι είναι μέσα ακολουθεί το ρομπότ και στις στροφές και προς τα πίσω.</li>
+          <li>Η δοκός γυρίζει πάνω από το ρομπότ, στο ύψος των μπαλών: ρίχνει μπάλες, δεν αγγίζει ό,τι είναι στο πάτωμα.</li>
           <li>Οθόνη 5×5: <code>hub.display.text(str(τιμή))</code> δείχνει τα ψηφία ένα-ένα· το <code>hub.display.number()</code> χωράει μόνο από −99 έως 99.</li>
           <li>Το hub έχει γυροσκόπιο: <code>robot.use_gyro(True)</code> για ακριβείς ευθείες και στροφές.</li>
         </ul>

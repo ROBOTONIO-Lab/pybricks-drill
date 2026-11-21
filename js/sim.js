@@ -7,12 +7,15 @@
 
   // ───────────────────────── Ρομπότ (ΑΛΛΑΞΕ ΕΔΩ τη διαμόρφωση) ─────────────────────────
   const ROBOT = {
-    wheelDiameter: 56,   // mm
+    wheelDiameter: 64.2, // mm
     axleTrack: 112,      // mm (απόσταση μεταξύ τροχών)
     sensorForward: 60,   // mm μπροστά από τον άξονα
-    sensorSide: 24,      // mm αριστερά/δεξιά από το κέντρο
+    sensorSide: 26,      // mm αριστερά/δεξιά από το κέντρο
     spotRadius: 6,       // mm, «μάτι» αισθητήρα
-    prongLength: 45,     // mm, εξοχή μπροστά από κάθε αισθητήρα
+    forkSide: 43,        // mm, κάθε δόντι του πιρουνιού αριστερά/δεξιά από το κέντρο
+    forkLength: 75,      // mm, μήκος δοντιών
+    forkStart: 69,       // mm μπροστά από τον άξονα: εκεί αρχίζει το πιρούνι (πλάτη της «τσέπης»)
+    beamLength: 160,     // mm, δοκός που ρίχνει τις μπάλες (περιστρέφεται πάνω από το ρομπότ, στο ύψος των μπαλών)
     driftRight: 0.01,    // ο δεξιός τροχός «χάνει» 1% (το ρομπότ δεν πάει τελείως ευθεία χωρίς γυροσκόπιο)
     turnScrub: 0.08,     // ολίσθηση στις στροφές: χωρίς γυροσκόπιο το turn(90) βγαίνει ~83°
     motorTau: 60,        // ms, αδράνεια μοτέρ
@@ -21,13 +24,27 @@
       A: { type: "motor", side: "left" },   // τοποθετημένο καθρεφτισμένα
       B: { type: "motor", side: "right" },
       C: { type: "color", side: "left" },
-      D: { type: "color", side: "right" }
+      D: { type: "color", side: "right" },
+      E: { type: "motor", role: "gate" },   // καπάκι πιρουνιού: 0° ανοιχτό, 90° κλειστό
+      F: { type: "motor", role: "beam" }    // δοκός: 0° κοιτάει μπροστά, θετικές μοίρες = δεξιόστροφα
     }
   };
+  // Το περίγραμμα του ρομπότ σε τοπικές συντεταγμένες (αρχή: μέσο άξονα, +x μπροστά, +y δεξιά)
+  function robotRects(gateClosed) {
+    const tip = ROBOT.forkStart + ROBOT.forkLength, fs = ROBOT.forkSide;
+    const R = [
+      { x0: -62, x1: 50, y0: -69, y1: 69 },                               // σώμα και τροχοί
+      { x0: 50, x1: ROBOT.forkStart, y0: -fs - 5, y1: fs + 5 },           // αισθητήρες και πλάτη πιρουνιού
+      { x0: ROBOT.forkStart, x1: tip, y0: -fs - 5, y1: -fs + 5 },         // αριστερό δόντι
+      { x0: ROBOT.forkStart, x1: tip, y0: fs - 5, y1: fs + 5 }            // δεξί δόντι
+    ];
+    if (gateClosed) R.push({ x0: tip - 8, x1: tip, y0: -fs, y1: fs });    // κλειστό καπάκι
+    return R;
+  }
 
   const RGB = {
     WHITE: [243, 243, 238], BLACK: [26, 26, 30], RED: [214, 40, 40], GREEN: [0, 146, 70],
-    BLUE: [0, 92, 200], YELLOW: [250, 205, 0], ORANGE: [255, 140, 0], CYAN: [0, 190, 210], VIOLET: [130, 60, 220], MAGENTA: [220, 40, 200], TABLE: [150, 130, 105]
+    BLUE: [0, 92, 200], YELLOW: [250, 205, 0], ORANGE: [255, 140, 0], CYAN: [0, 190, 210], VIOLET: [130, 60, 220], MAGENTA: [220, 40, 200], TABLE: [150, 130, 105], VOID: [8, 8, 8], BROWN: [90, 58, 30], GREY: [200, 203, 208], PARK: [63, 211, 63]
   };
 
   // ───────────────────────── Γεωμετρία πίστας ─────────────────────────
@@ -69,6 +86,8 @@
       const f = s / 2 - i;
       return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, th };
     };
+    const segs = def.segs || [], disk = def.disk || null, zones = def.zones || [];
+    const view = def.view || { x: 0, y: 0, w: def.width, h: def.height };
     const marks = (def.marks || []).map(m => {
       const s = m.s < 0 ? path.length + m.s : m.s;
       return Object.assign({}, m, { s, c: at(s) });
@@ -95,14 +114,26 @@
       const qx = Math.abs(x - rect.cx) - rect.w / 2, qy = Math.abs(y - rect.cy) - rect.h / 2;
       return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
     }
+    const boxSd = (x, y, b) => { const qx = Math.abs(x - (b.x + b.w / 2)) - b.w / 2, qy = Math.abs(y - (b.y + b.h / 2)) - b.h / 2;
+      return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0); };
+    const voidOut = def.outside === "void";          // υπερυψωμένο πεδίο: έξω από την άκρη ο αισθητήρας δεν βλέπει τίποτα
     function rgbAt(x, y, r) {
-      if (x < 0 || y < 0 || x > def.width || y > def.height) return RGB.TABLE;
+      const out = Math.max(-x, x - def.width, -y, y - def.height);   // >0 = εκτός πίστας
+      if (out >= r || (!voidOut && out > 0)) return voidOut ? RGB.VOID : RGB.TABLE;
       let d = 1e9;
       if (path) d = nearest(x, y).d;
       if (rect) d = Math.min(d, Math.abs(rectSd(x, y)));
       const hw = def.lineWidth / 2;
-      const cl = Math.max(0, Math.min(1, (hw + r - d) / (2 * r)));
+      let sdBlack = d - hw;                          // προσημασμένη απόσταση από το κοντινότερο μαύρο
+      for (const g of segs) sdBlack = Math.min(sdBlack, boxSd(x, y, g));
+      if (disk) sdBlack = Math.min(sdBlack, Math.hypot(x - disk.cx, y - disk.cy) - disk.r);
+      const cl = Math.max(0, Math.min(1, (r - sdBlack) / (2 * r)));
       let c = [0, 1, 2].map(k => RGB.WHITE[k] + (RGB.BLACK[k] - RGB.WHITE[k]) * cl);
+      for (const z of zones) {
+        const cz = Math.max(0, Math.min(1, (r - boxSd(x, y, z)) / (2 * r)));
+        if (cz > 0) c = c.map((q, k) => q + (RGB[z.color][k] - q) * cz);
+      }
+      if (voidOut && out > -r) { const cv = (r + out) / (2 * r); c = c.map((q, k) => q + (RGB.VOID[k] - q) * cv); }
       for (const m of marks) {
         const dx = x - m.c.x, dy = y - m.c.y, ct = Math.cos(m.c.th), st = Math.sin(m.c.th);
         const u = dx * ct + dy * st, v = -dx * st + dy * ct;
@@ -112,7 +143,7 @@
       }
       return c;
     }
-    return { def, width: def.width, height: def.height, lineWidth: def.lineWidth, pts, rect, hasPath: !!path,
+    return { def, width: def.width, height: def.height, lineWidth: def.lineWidth, pts, rect, segs, disk, zones, view, hasPath: !!path,
              length: path ? path.length : 0, marks, at, nearest, rectSd, rgbAt };
   }
 
@@ -182,20 +213,28 @@
     setup(rnd) {                       // νέο στιγμιότυπο της πρόκλησης (τυχαίες διαστάσεις)
       const b = this.task.build(rnd || Math.random);
       this.mat = makeMat(b.mat); this.start = b.start; this.info = b.info || {};
+      this.anchor = b.anchor || { x: 0, y: 0 }; this.worldDef = b.world || null;
       this.reset();
     }
     reset() {
       const st = this.start;
       this.x = st.x; this.y = st.y; this.th = st.heading * Math.PI / 180;
       this.th0 = this.th; this.headingZero = 0;
-      this.time = 0; this.odo = 0; this.maxDev = 0; this.maxS = 0; this.maxOut = -1e9;
-      this.motors = { A: { target: 0, speed: 0, angle: 0, man: null }, B: { target: 0, speed: 0, angle: 0, man: null } };
+      this.time = 0; this.odo = 0; this.travel = 0; this.maxDev = 0; this.maxS = 0; this.maxOut = -1e9;
+      this.motors = {};
+      for (const p of ["A", "B", "E", "F"]) this.motors[p] = { target: 0, speed: 0, angle: 0, man: null };
+      this.fell = false; this.world = null;
+      if (this.worldDef) this.world = {            // αντικείμενα που σπρώχνονται, πύργοι με μπάλες, δοχεία εκτός πεδίου
+        objs: this.worldDef.objs.map(o => Object.assign({ state: "field", x0: o.x, y0: o.y }, o)),
+        towers: this.worldDef.towers.map(t => Object.assign({ ball: true, hit: false }, t)),
+        containers: this.worldDef.containers
+      };
       this.wDeg = 0; this.vNow = 0;
       this.db = null; this.usedGyro = false;
       this.trail = [[this.x, this.y]]; this._acc = 0;
       this.light = null; this.pixels = new Array(25).fill(0); this.shown = []; this.beepUntil = 0; this.volume = 100;
     }
-    stopMotors() { if (this.db) { this.db.active = false; this.db.man = null; } for (const m of [this.motors.A, this.motors.B]) { m.target = 0; m.man = null; } }
+    stopMotors() { if (this.db) { this.db.active = false; this.db.man = null; } for (const p in this.motors) { this.motors[p].target = 0; this.motors[p].man = null; } }
     sensorPos(side) {
       const c = Math.cos(this.th), s = Math.sin(this.th), k = side === "left" ? -1 : side === "right" ? 1 : 0;
       return [this.x + ROBOT.sensorForward * c - k * ROBOT.sensorSide * s,
@@ -217,8 +256,8 @@
     moving() { return Math.abs(this.motors.A.speed) + Math.abs(this.motors.B.speed) > 8; }
     step(dt) {
       const d = this.db;
-      for (const m of [this.motors.A, this.motors.B]) {      // ελιγμοί μεμονωμένου μοτέρ
-        if (!m.man) continue;
+      for (const p in this.motors) {                         // ελιγμοί μεμονωμένου μοτέρ
+        const m = this.motors[p]; if (!m.man) continue;
         if (m.man.type === "time") { if (this.time >= m.man.until) { m.target = 0; m.man = null; } else m.target = m.man.speed; }
         else { const rem = m.man.target - m.angle;
           if (Math.abs(rem) < 1.5) { m.target = 0; m.man = null; } else m.target = Math.sign(rem) * Math.min(m.man.speed, Math.max(10, Math.abs(rem) * 5)); }
@@ -240,15 +279,16 @@
         this.motors[d.rp].target = (d.v - diff) * k * d.rd;
       }
       const K = Math.PI * ROBOT.wheelDiameter / 360, a = 1 - Math.exp(-dt / ROBOT.motorTau);
-      for (const m of [this.motors.A, this.motors.B]) {
-        const tg = Math.max(-ROBOT.maxMotorSpeed, Math.min(ROBOT.maxMotorSpeed, m.target));
+      for (const p in this.motors) {
+        const m = this.motors[p], tg = Math.max(-ROBOT.maxMotorSpeed, Math.min(ROBOT.maxMotorSpeed, m.target));
         m.speed += (tg - m.speed) * a; m.angle += m.speed * dt / 1000;
       }
       const vl = -this.motors.A.speed * K, vr = this.motors.B.speed * K * (1 - ROBOT.driftRight);   // A είναι καθρεφτισμένο
       const v = (vl + vr) / 2, w = (vl - vr) / ROBOT.axleTrack * (1 - ROBOT.turnScrub);
       this.th += w * dt / 1000; this.wDeg = w * 180 / Math.PI; this.vNow = v;
       this.x += v * Math.cos(this.th) * dt / 1000; this.y += v * Math.sin(this.th) * dt / 1000;
-      this.odo += v * dt / 1000; this.time += dt;
+      this.odo += v * dt / 1000; this.travel += Math.abs(v) * dt / 1000; this.time += dt;
+      if (this.world) this.worldStep();
       this._acc += dt;
       if (this._acc >= 20) {
         this._acc = 0;
@@ -263,6 +303,61 @@
         }
         const l = this.trail[this.trail.length - 1];
         if (Math.hypot(l[0] - this.x, l[1] - this.y) > 4) this.trail.push([this.x, this.y]);
+      }
+    }
+    gateClosed() { const a = this.motors.E.angle; return a >= 70 && a <= 110; }
+    footprint() {                      // οι 4 γωνίες του ρομπότ (με το πιρούνι) στον κόσμο
+      const c = Math.cos(this.th), s = Math.sin(this.th), tip = ROBOT.forkStart + ROBOT.forkLength;
+      return [[-62, -69], [tip, -69], [tip, 69], [-62, 69]].map(q => [this.x + q[0] * c - q[1] * s, this.y + q[0] * s + q[1] * c]);
+    }
+    worldStep() {
+      const W = this.world, c = Math.cos(this.th), s = Math.sin(this.th), rects = robotRects(this.gateClosed());
+      const fw = this.mat.width, fh = this.mat.height;
+      const pushOut = (u, v, r, b) => {            // δίσκος (u,v,r) έξω από ορθογώνιο b· επιστρέφει νέο [u,v] ή null
+        const cx = Math.max(b.x0, Math.min(b.x1, u)), cy = Math.max(b.y0, Math.min(b.y1, v));
+        const dx = u - cx, dy = v - cy, d = Math.hypot(dx, dy);
+        if (d >= r) return null;
+        if (d > 1e-6) return [u + dx / d * (r - d), v + dy / d * (r - d)];
+        const m = [u - b.x0, b.x1 - u, v - b.y0, b.y1 - v], k = m.indexOf(Math.min.apply(null, m));   // κέντρο μέσα: έξοδος από την κοντινότερη πλευρά
+        return k === 0 ? [b.x0 - r, v] : k === 1 ? [b.x1 + r, v] : k === 2 ? [u, b.y0 - r] : [u, b.y1 + r];
+      };
+      const live = W.objs.filter(o => o.state === "field");
+      for (let it = 0; it < 2; it++) {
+        for (const o of live) {                    // ρομπότ -> αντικείμενο
+          const dx = o.x - this.x, dy = o.y - this.y; let u = dx * c + dy * s, v = -dx * s + dy * c, moved = false;
+          for (const b of rects) { const q = pushOut(u, v, o.r, b); if (q) { u = q[0]; v = q[1]; moved = true; } }
+          if (moved) { o.x = this.x + u * c - v * s; o.y = this.y + u * s + v * c; }
+        }
+        for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {   // αντικείμενο <-> αντικείμενο
+          const a = live[i], b = live[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), need = a.r + b.r;
+          if (d < need && d > 1e-6) { const k = (need - d) / 2 / d; a.x -= dx * k; a.y -= dy * k; b.x += dx * k; b.y += dy * k; }
+        }
+        for (const o of live) for (const t of W.towers) {   // οι πύργοι δεν μετακινούνται από αντικείμενα
+          const q = pushOut(o.x, o.y, o.r, { x0: t.x - 40, x1: t.x + 40, y0: t.y - 40, y1: t.y + 40 });
+          if (q) { o.x = q[0]; o.y = q[1]; }
+        }
+      }
+      for (const o of live) {                      // έξω από την άκρη: σε δοχείο ή χαμένο
+        if (o.x >= 0 && o.x <= fw && o.y >= 0 && o.y <= fh) continue;
+        const k = W.containers.find(q => (q.side === "N" ? o.y < 0 : o.y > fh) && o.x >= q.x0 && o.x <= q.x1);
+        o.state = k ? k.id : "lost";
+        if (k) { o.y = k.side === "N" ? -25 : fh + 25; o.x = Math.max(k.x0 + o.r, Math.min(k.x1 - o.r, o.x)); }
+      }
+      const bx = this.x, by = this.y, ba = this.th + this.motors.F.angle * Math.PI / 180;
+      const ex = Math.cos(ba), ey = Math.sin(ba);
+      for (const t of W.towers) {
+        if (!t.hit) {                              // το σώμα ακούμπησε τη βάση του πύργου -> ποινή
+          const dx = t.x - this.x, dy = t.y - this.y, u = dx * c + dy * s, v = -dx * s + dy * c;
+          if (rects.some(b => pushOut(u, v, 38, b))) t.hit = true;
+        }
+        if (t.ball) {                              // η δοκός πέρασε από τη μπάλα -> η μπάλα πέφτει
+          const k = Math.max(0, Math.min(ROBOT.beamLength, (t.x - bx) * ex + (t.y - by) * ey));
+          if (Math.hypot(t.x - bx - ex * k, t.y - by - ey * k) < 29) t.ball = false;
+        }
+      }
+      for (const k of [-1, 1]) {                   // τροχός εκτός πεδίου -> το ρομπότ έπεσε
+        const wx = this.x - k * (ROBOT.axleTrack / 2) * s, wy = this.y + k * (ROBOT.axleTrack / 2) * c;
+        if (wx < 0 || wx > fw || wy < 0 || wy > fh) this.fell = true;
       }
     }
     advance(ms) { while (ms > 1e-9) { const d = Math.min(2, ms); this.step(d); ms -= d; } }
@@ -284,6 +379,7 @@
     check() {
       if (this.stopFlag) { this.signal = "stop"; throw new StopSignal(); }
       if (this.sim.time > this.timeLimit) { this.signal = "timeout"; throw new TimeoutSignal(); }
+      if (this.sim.fell) { this.signal = "fell"; throw new TimeoutSignal(); }
     }
     pace() {
       if (!isFinite(this.speed)) return null;
@@ -1043,7 +1139,7 @@ InventorHub = PrimeHub
 
   const TASKS = [];   // γεμίζει από το js/tasks.js
 
-  const API = { ROBOT, RGB, TASKS, Sim, Runtime, StopSignal, TimeoutSignal, runProgram, classify, current: null };
+  const API = { ROBOT, robotRects, RGB, TASKS, Sim, Runtime, StopSignal, TimeoutSignal, runProgram, classify, current: null };
   root.PBSIM = API;
   if (typeof module !== "undefined" && module.exports) module.exports = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -147,7 +147,7 @@
     const nav = $("steps"); nav.innerHTML = "";
     TASKS.forEach((t, i) => {
       const b = document.createElement("button"), ok = done.includes(t.id);
-      b.textContent = (ok ? "✔ " : "") + "Πρόκληση " + (i + 1);
+      b.textContent = (ok ? "✔ " : "") + (t.tab || "Πρόκληση " + (i + 1));
       b.title = t.title; if (ok) b.classList.add("done");
       if (i === idx) b.setAttribute("aria-current", "step");
       b.addEventListener("click", () => { if (!running) loadTask(i); });
@@ -163,14 +163,23 @@
   }
   $("btn-hint").addEventListener("click", () => { if (hintsShown[idx] < task.hints.length) { hintsShown[idx]++; renderHints(); renderStats(); } });
   function renderChecks(list) {
-    const items = list || task.evaluate(sim, { output: "", finished: false }).map(c => ({ text: c.text }));
-    $("checks").innerHTML = items.map(c => '<li class="' + (c.ok === undefined ? "" : c.ok ? "ok" : "bad") + '">' + c.text + "</li>").join("");
+    const fresh = !list, items = list || task.evaluate(sim, { output: "", finished: false });
+    const el = $("checks");
+    if (items.maxScore) {                            // αποστολή με πόντους: πίνακας βαθμολογίας
+      el.className = "checks score";
+      el.innerHTML = items.filter(c => !(fresh && c.bad)).map(c => '<li class="' + (fresh ? "" : c.pts < 0 || c.bad ? "bad" : c.pts > 0 ? "ok" : "") + '"><span>' + c.text + "</span><b>" +
+        (fresh ? (c.penalty ? "" : c.max) : c.penalty ? (c.pts || "") : c.pts + " / " + c.max) + "</b></li>").join("") +
+        '<li class="total"><span>ΣΥΝΟΛΟ</span><b>' + (fresh ? "— / " : items.score + " / ") + items.maxScore + "</b></li>";
+    } else {
+      el.className = "checks";
+      el.innerHTML = items.map(c => '<li class="' + (fresh ? "" : c.ok ? "ok" : "bad") + '">' + c.text + "</li>").join("");
+    }
   }
   function loadTask(i) {
     idx = clampIdx(i); task = TASKS[idx]; store.set("current", idx);
     sim = new P.Sim(task); matCache = null; fit(); placed = null; homeStart = sim.start;
     runs = 0; taskStart = Date.now(); taskStop = null; solved = false; errLine = 0;
-    $("task-title").textContent = "Πρόκληση " + (idx + 1) + " · " + task.title;
+    $("task-title").textContent = (task.tab ? "" : "Πρόκληση " + (idx + 1) + " · ") + task.title;
     $("task-desc").innerHTML = task.desc;
     con.textContent = ""; $("banner").classList.remove("on");
     renderSteps(); renderHints(); renderChecks(null); renderStats(); refreshGutter();
@@ -199,19 +208,20 @@
   // ───────── Τοποθέτηση του ρομπότ με το ποντίκι: σύρσιμο = μετακίνηση, λαβή ή ροδέλα = περιστροφή ─────────
   let placed = null, homeStart = null, drag = null;
   const board = $("mat");
-  const HANDLE = 150;                                // mm μπροστά από το κέντρο του ρομπότ
-  function toMat(e) { const r = board.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * sim.mat.width, (e.clientY - r.top) / r.height * sim.mat.height]; }
+  const HANDLE = 185;                                // mm μπροστά από το κέντρο του ρομπότ
+  function toMat(e) { const r = board.getBoundingClientRect(); const v = sim.mat.view; return [v.x + (e.clientX - r.left) / r.width * v.w, v.y + (e.clientY - r.top) / r.height * v.h]; }
   function hit(pt) {
     const hx = sim.x + HANDLE * Math.cos(sim.th), hy = sim.y + HANDLE * Math.sin(sim.th);
     if (Math.hypot(pt[0] - hx, pt[1] - hy) <= 30) return "rotate";
     const dx = pt[0] - sim.x, dy = pt[1] - sim.y, c = Math.cos(sim.th), sn = Math.sin(sim.th);
     const u = dx * c + dy * sn, v = -dx * sn + dy * c;   // στο σύστημα του ρομπότ
-    return (u > -70 && u < 120 && Math.abs(v) < 75) ? "move" : null;
+    return (u > -70 && u < 148 && Math.abs(v) < 75) ? "move" : null;
   }
   function place(x, y, th) {
     const m = sim.mat;
-    placed = { x: Math.max(0, Math.min(m.width, x)), y: Math.max(0, Math.min(m.height, y)), heading: th * 180 / Math.PI };
-    sim.start = placed; sim.reset(); renderChecks(null); $("banner").classList.remove("on");
+    x = Math.max(0, Math.min(m.width, x)); y = Math.max(0, Math.min(m.height, y));
+    placed = { dx: x - sim.anchor.x, dy: y - sim.anchor.y, heading: th * 180 / Math.PI };
+    sim.start = { x, y, heading: placed.heading }; sim.reset(); renderChecks(null); $("banner").classList.remove("on");
   }
   board.addEventListener("pointerdown", e => {
     if (running || e.button > 0) return;
@@ -248,7 +258,7 @@
     running = true; runs++; renderStats(); errLine = 0; refreshGutter();
     $("btn-run").disabled = true; $("btn-stop").disabled = false; $("btn-reset").disabled = true;
     sim.setup(); matCache = null;                    // νέο τυχαίο στιγμιότυπο της πρόκλησης
-    if (placed) { sim.start = placed; sim.reset(); } // ...αλλά από τη θέση όπου έβαλε ο χρήστης το ρομπότ
+    if (placed) { sim.start = { x: sim.anchor.x + placed.dx, y: sim.anchor.y + placed.dy, heading: placed.heading }; sim.reset(); }   // ...αλλά από τη θέση όπου έβαλε ο χρήστης το ρομπότ
     con.textContent = ""; renderChecks(null); $("banner").classList.remove("on");
     rt = new P.Runtime(sim, { speed: Number($("speed").value) });
     const result = { output: "", finished: false };
@@ -258,6 +268,7 @@
     } catch (e) {
       if (rt.signal === "stop") out("\n■ Σταμάτησε από εσένα.\n", "m");
       else if (rt.signal === "timeout") out("\n⏱ Πέρασαν " + rt.timeLimit / 1000 + " δευτερόλεπτα και το πρόγραμμα δεν τελείωσε.\n", "e");
+      else if (rt.signal === "fell") out("\n⤵ Το ρομπότ έβγαλε ρόδα έξω από το πεδίο και έπεσε. Το run τελείωσε.\n", "e");
       else {
         const msg = e && e.toString ? e.toString() : String(e);
         const tb = (e && e.traceback || []).filter(t => t.filename === "<stdin>.py");
@@ -268,17 +279,27 @@
       }
     }
     // Όπως στο πραγματικό hub: στο τέλος του προγράμματος τα μοτέρ σταματούν
+    const fell = sim.fell;
     sim.stopMotors(); rt.stopFlag = false; rt.signal = null; rt.timeLimit = Infinity; rt.resync();
-    await rt.long(450);
+    if (!fell) await rt.long(450);
     const checks = task.evaluate(sim, result);
     renderChecks(checks);
-    if (checks.every(c => c.ok)) {
+    const last = idx === TASKS.length - 1, scored = !!checks.maxScore;
+    const passed = scored ? checks.score >= (task.passScore || 1) : checks.every(c => c.ok);
+    if (scored) {
+      const best = Math.max(checks.score, Number(store.get("best:" + task.id)) || 0); store.set("best:" + task.id, best);
+      out("\nΠραγματικές τιμές σε αυτό το γήπεδο: " + checks.truth + "\n", "m");
+      $("banner-text").textContent = "Σκορ: " + checks.score + " / " + checks.maxScore + " · καλύτερο: " + best + " · χρόνος run " + (sim.time / 1000).toFixed(1) + " s · υποδείξεις " + hintsShown[idx];
+      $("btn-next").hidden = true; $("banner").classList.add("on");
+    }
+    if (passed) {
       if (!solved) { solved = true; taskStop = Date.now(); }
-      const last = idx === TASKS.length - 1;
       if (!done.includes(task.id)) { done.push(task.id); store.set("done", JSON.stringify(done)); }
-      $("banner-text").textContent = (last ? "Τις έβγαλες όλες! " : "Πέτυχες! ") + "Χρόνος " + mmss(taskMs()) + " · υποδείξεις " + hintsShown[idx] + " · εκτελέσεις " + runs;
-      $("btn-next").hidden = last;
-      $("banner").classList.add("on"); renderSteps();
+      if (!scored) {
+        $("banner-text").textContent = (last ? "Τις έβγαλες όλες! " : "Πέτυχες! ") + "Χρόνος " + mmss(taskMs()) + " · υποδείξεις " + hintsShown[idx] + " · εκτελέσεις " + runs;
+        $("btn-next").hidden = last; $("banner").classList.add("on");
+      }
+      renderSteps();
     }
     running = false; rt = null; $("btn-run").disabled = false; $("btn-stop").disabled = true; $("btn-reset").disabled = false; renderStats();
   }
@@ -297,17 +318,24 @@
   let matCache = null, scale = 1;
   const css = c => "rgb(" + c.map(Math.round).join(",") + ")";
   function fit() {
-    const w = cv.clientWidth || 1200, dpr = window.devicePixelRatio || 1;
-    cv.width = Math.round(w * dpr); cv.height = Math.round(w * dpr * sim.mat.height / sim.mat.width);
-    scale = cv.width / sim.mat.width; matCache = null;
+    const w = cv.clientWidth || 1200, dpr = window.devicePixelRatio || 1, v = sim.mat.view;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(w * dpr * v.h / v.w);
+    scale = cv.width / v.w; matCache = null;
   }
+  const toView = g => { const v = sim.mat.view; g.setTransform(scale, 0, 0, scale, -v.x * scale, -v.y * scale); };
   function drawMat() {
-    const m = sim.mat, c = document.createElement("canvas"); c.width = cv.width; c.height = cv.height;
-    const g = c.getContext("2d"); g.scale(scale, scale);
+    const m = sim.mat, v = m.view, c = document.createElement("canvas"); c.width = cv.width; c.height = cv.height;
+    const g = c.getContext("2d"), raised = m.def.outside === "void";
+    g.fillStyle = raised ? "#4b4f5a" : "#96826a"; g.fillRect(0, 0, c.width, c.height);     // πάτωμα γύρω από υπερυψωμένο πεδίο
+    toView(g);
     g.fillStyle = css(P.RGB.WHITE); g.fillRect(0, 0, m.width, m.height);
     g.strokeStyle = "#dedacd"; g.lineWidth = 1;
     for (let x = 100; x < m.width; x += 100) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, m.height); g.stroke(); }
     for (let y = 100; y < m.height; y += 100) { g.beginPath(); g.moveTo(0, y); g.lineTo(m.width, y); g.stroke(); }
+    for (const z of m.zones) { g.fillStyle = css(P.RGB[z.color]); g.fillRect(z.x, z.y, z.w, z.h); }
+    g.fillStyle = css(P.RGB.BLACK);
+    if (m.disk) { g.beginPath(); g.arc(m.disk.cx, m.disk.cy, m.disk.r, 0, 7); g.fill(); }
+    for (const q of m.segs) g.fillRect(q.x, q.y, q.w, q.h);
     g.strokeStyle = css(P.RGB.BLACK); g.lineWidth = m.lineWidth; g.lineCap = "round"; g.lineJoin = "round";
     if (m.hasPath) { g.beginPath(); m.pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
     if (m.rect) g.strokeRect(m.rect.cx - m.rect.w / 2, m.rect.cy - m.rect.h / 2, m.rect.w, m.rect.h);
@@ -315,21 +343,58 @@
       g.save(); g.translate(k.c.x, k.c.y); g.rotate(k.c.th); g.fillStyle = css(P.RGB[k.color]);
       g.fillRect(-k.length / 2, -k.width / 2, k.length, k.width); g.restore();
     }
+    g.textAlign = "left"; g.textBaseline = "alphabetic";
     g.fillStyle = "#8a8674"; g.font = "20px sans-serif"; g.fillText("πλέγμα: 100 mm", m.width - 170, m.height - 16);
+    if (sim.world) {                                 // δοχεία έξω από την άκρη του πεδίου και ετικέτες
+      g.font = "600 22px sans-serif"; g.textAlign = "center";
+      for (const k of sim.world.containers) {
+        const y = k.side === "N" ? -62 : m.height + 2;
+        g.fillStyle = css(P.RGB[k.color]); g.fillRect(k.x0, y, k.x1 - k.x0, 60);
+        g.strokeStyle = "#1b2230"; g.lineWidth = 3; g.strokeRect(k.x0, y, k.x1 - k.x0, 60);
+        g.fillStyle = "#1b2230"; g.fillText(k.label, (k.x0 + k.x1) / 2, k.side === "N" ? -68 : m.height + 86);
+      }
+      g.fillStyle = "#8a8674"; g.font = "600 20px sans-serif"; g.save(); g.translate(sim.info.X + 26, 60); g.rotate(Math.PI / 2); g.textAlign = "left"; g.fillText("Γραμμή Εκκίνησης", 0, 0); g.restore();
+      g.textAlign = "left"; g.fillText("Δ", 12, m.height / 2 + 6); g.textAlign = "right"; g.fillText("Α", m.width - 12, m.height / 2 - 40);
+      g.textAlign = "left";
+    }
     g.strokeStyle = "#1b2230"; g.lineWidth = 6; g.strokeRect(3, 3, m.width - 6, m.height - 6);
     return c;
   }
+  function drawWorld(g) {                            // αντικείμενα, πύργοι, μπάλες
+    const W = sim.world;
+    for (const t of W.towers) {
+      g.save(); g.translate(t.x, t.y); if (t.hit) g.rotate(0.35);
+      g.fillStyle = t.hit ? "#f3b4ae" : css(P.RGB.GREY); g.strokeStyle = t.hit ? "#c2362b" : "#333"; g.lineWidth = 3;
+      g.fillRect(-40, -40, 80, 80); g.strokeRect(-40, -40, 80, 80);
+      if (t.ball) { g.fillStyle = "#e41a1a"; g.strokeStyle = "#222"; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 25, 0, 7); g.fill(); g.stroke(); }
+      g.restore();
+      if (!t.ball) { g.fillStyle = "#e41a1a88"; g.strokeStyle = "#2228"; g.lineWidth = 2; g.beginPath(); g.arc(t.x + (t.x > 600 ? -70 : 70), t.y + 62, 25, 0, 7); g.fill(); g.stroke(); }
+    }
+    for (const o of W.objs) {
+      g.globalAlpha = o.state === "lost" ? 0.35 : 1;
+      g.fillStyle = css(P.RGB[o.color]); g.strokeStyle = o.color === "WHITE" ? "#0b4fa8" : "#0006"; g.lineWidth = 2.5;
+      if (o.kind === "letter") { g.fillRect(o.x - 15, o.y - 15, 30, 30); g.strokeRect(o.x - 15, o.y - 15, 30, 30); g.fillStyle = "#fff"; g.fillRect(o.x - 8, o.y - 3, 16, 6); }
+      else if (o.kind === "dog" || o.kind === "cat") { rr(g, o.x - 15, o.y - 15, 30, 30, 8); g.fill(); g.stroke(); }
+      else { g.beginPath(); g.arc(o.x, o.y, o.r, 0, 7); g.fill(); g.stroke(); }
+      if (o.kind === "cat" || o.kind === "dog") { g.fillStyle = o.color === "WHITE" ? "#0b4fa8" : "#fff"; g.font = "700 18px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+        g.fillText(o.id === "cat_a" ? "a" : o.id === "cat_b" ? "b" : "σ", o.x, o.y + 1); g.textAlign = "left"; g.textBaseline = "alphabetic"; }
+      g.globalAlpha = 1;
+    }
+  }
   function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
   // Το ρομπότ σε τοπικές συντεταγμένες (mm): αρχή στο μέσο του άξονα, +x μπροστά
-  function drawRobot(g, x, y, th, eyes, light, pixels) {
+  function drawRobot(g, x, y, th, eyes, light, pixels, gateDeg, beamDeg) {
     const half = R.axleTrack / 2, sf = R.sensorForward, ss = R.sensorSide;
     g.save(); g.translate(x, y); g.rotate(th);
     g.fillStyle = "#0002"; rr(g, -62, -half - 10, 112, R.axleTrack + 28, 14); g.fill();           // σκιά
     g.fillStyle = "#9aa1ad"; rr(g, -9, -half, 18, R.axleTrack, 4); g.fill();                        // δοκός τροχών
-    for (const k of [-1, 1]) {
-      g.fillStyle = "#9aa1ad"; rr(g, 20, k * ss - 4.5, sf - 26, 9, 2); g.fill();                    // βραχίονας αισθητήρα
-      g.fillStyle = "#4a5160"; rr(g, sf + 9, k * ss - 5.5, R.prongLength, 11, 4); g.fill();         // εξοχή
-    }
+    const fs = R.forkSide, f0 = R.forkStart, tip = R.forkStart + R.forkLength;
+    for (const k of [-1, 1]) { g.fillStyle = "#9aa1ad"; rr(g, 20, k * ss - 4.5, sf - 26, 9, 2); g.fill(); }   // βραχίονες αισθητήρων
+    g.fillStyle = "#4a5160"; rr(g, f0 - 10, -fs - 5, 10, 2 * fs + 10, 3); g.fill();                 // πλάτη πιρουνιού
+    for (const k of [-1, 1]) { rr(g, f0 - 4, k * fs - 5, R.forkLength + 4, 10, 4); g.fill(); }      // δόντια
+    const ga = Math.max(0, Math.min(120, gateDeg || 0)) * Math.PI / 180;                           // καπάκι: άρθρωση στο αριστερό δόντι
+    g.strokeStyle = "#e0a400"; g.lineWidth = 7; g.lineCap = "round";
+    g.beginPath(); g.moveTo(tip - 4, -fs); g.lineTo(tip - 4 + 2 * fs * Math.cos(ga), -fs + 2 * fs * Math.sin(ga)); g.stroke(); g.lineCap = "butt";
     for (const k of [-1, 1]) {                                                                      // τροχοί
       g.fillStyle = "#20242c"; rr(g, -R.wheelDiameter / 2, k * half - 13, R.wheelDiameter, 26, 7); g.fill();
       g.fillStyle = "#35b6c4"; rr(g, -10, k * half - 5, 20, 10, 3); g.fill();
@@ -351,39 +416,45 @@
       rr(g, sf - 11, k * ss - 11, 22, 22, 5); g.fill(); g.stroke();
       g.fillStyle = css(eyes[i]); g.beginPath(); g.arc(sf, k * ss, 6, 0, 7); g.fill(); g.stroke();
     });
+    const ba = (beamDeg || 0) * Math.PI / 180;                                                      // δοκός (πάνω από όλα, στο ύψος των μπαλών)
+    g.strokeStyle = "rgba(194,54,43,.85)"; g.lineWidth = 9; g.lineCap = "round";
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(R.beamLength * Math.cos(ba), R.beamLength * Math.sin(ba)); g.stroke(); g.lineCap = "butt";
+    g.fillStyle = "#7d1f18"; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill();
     g.restore();
   }
   function drawRobotFigure() {                       // η κάτοψη στην κάρτα «Το ρομπότ σου»
-    const c = $("robotfig"), dpr = window.devicePixelRatio || 1, W = 300, H = 275, k = 1.35;
+    const c = $("robotfig"), dpr = window.devicePixelRatio || 1, W = 320, H = 300, k = 1.15;
     c.width = W * dpr; c.height = H * dpr;
     const g = c.getContext("2d"); g.scale(dpr, dpr);
-    const ox = 150, oy = 186;
-    g.save(); g.translate(ox, oy); g.scale(k, k); drawRobot(g, 0, 0, -Math.PI / 2, [P.RGB.WHITE, P.RGB.WHITE], null); g.restore();
+    const ox = 160, oy = 212;
+    g.save(); g.translate(ox, oy); g.scale(k, k); drawRobot(g, 0, 0, -Math.PI / 2, [P.RGB.WHITE, P.RGB.WHITE], null, null, 90, 42); g.restore();
     const tag = (t, x, y, lx, ly) => {
       g.strokeStyle = "#6a7180"; g.lineWidth = 1; g.beginPath(); g.moveTo(lx, ly); g.lineTo(x, y); g.stroke();
       g.fillStyle = "#f5c400"; rr(g, x - 13, y - 12, 26, 24, 5); g.fill();
       g.fillStyle = "#1b2230"; g.font = "700 15px ui-monospace, Consolas, monospace"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(t, x, y + 1);
     };
-    const half = R.axleTrack / 2 * k, sf = R.sensorForward * k, ss = R.sensorSide * k;
-    tag("A", 26, oy, ox - half - 16, oy); tag("B", W - 26, oy, ox + half + 16, oy);
-    tag("C", 60, oy - sf - 8, ox - ss - 12, oy - sf); tag("D", W - 60, oy - sf - 8, ox + ss + 12, oy - sf);
-    g.fillStyle = "#6a7180"; g.font = "12px sans-serif"; g.textAlign = "center";
-    g.fillText("↑ μπροστά (εξοχές)", ox, 13); g.fillText("κάτοψη", ox, H - 8);
+    const half = R.axleTrack / 2 * k, sf = R.sensorForward * k, ss = R.sensorSide * k, tip = (R.forkStart + R.forkLength) * k, fs = R.forkSide * k;
+    tag("A", 28, oy, ox - half - 16, oy); tag("B", W - 28, oy, ox + half + 16, oy);
+    tag("C", 50, oy - sf, ox - ss - 12, oy - sf); tag("D", W - 50, oy - sf - 30, ox + ss + 12, oy - sf);
+    tag("E", 40, oy - tip + 4, ox - fs + 14, oy - tip + 4); tag("F", W - 22, oy - 150, ox + 118, oy - 132);
+    g.fillStyle = "#6a7180"; g.font = "12px sans-serif"; g.textAlign = "center"; g.textBaseline = "alphabetic";
+    g.fillText("↑ μπροστά", ox, 22); g.fillText("κάτοψη", ox, H - 6);
   }
   function frame() {
     if (!matCache) matCache = drawMat();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(matCache, 0, 0);
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    toView(ctx);
+    if (sim.world) drawWorld(ctx);
     if (sim.trail.length > 1) {
       ctx.strokeStyle = "rgba(11,107,203,.55)"; ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.beginPath();
       sim.trail.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.lineTo(sim.x, sim.y); ctx.stroke();
     }
     const c = sim.read("C"), d = sim.read("D");
-    drawRobot(ctx, sim.x, sim.y, sim.th, [c.rgb, d.rgb], sim.light, sim.pixels);
+    drawRobot(ctx, sim.x, sim.y, sim.th, [c.rgb, d.rgb], sim.light, sim.pixels, sim.motors.E.angle, sim.motors.F.angle);
     if (!running) {                                  // λαβή περιστροφής
       const hx = sim.x + HANDLE * Math.cos(sim.th), hy = sim.y + HANDLE * Math.sin(sim.th);
       ctx.strokeStyle = "rgba(11,107,203,.6)"; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
-      ctx.beginPath(); ctx.moveTo(sim.x + 118 * Math.cos(sim.th), sim.y + 118 * Math.sin(sim.th)); ctx.lineTo(hx, hy); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(sim.x + 150 * Math.cos(sim.th), sim.y + 150 * Math.sin(sim.th)); ctx.lineTo(hx, hy); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = "#0b6bcb"; ctx.beginPath(); ctx.arc(hx, hy, 13, 0, 7); ctx.fill();
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy, 6, 0.6, 5.2); ctx.stroke();
     }
@@ -399,6 +470,7 @@
     }
     const chip = (name, r) => '<span class="chip">' + name + ' <i style="background:' + css(r.rgb) + '"></i>' + r.name.padEnd(6, " ") + " " + String(r.reflection).padStart(3, " ") + "%</span>";
     const html = chip("C", c) + chip("D", d) +
+      '<span class="chip">E' + String(Math.round(sim.motors.E.angle)).padStart(4, "\u00a0") + "° F" + String(Math.round(sim.motors.F.angle)).padStart(4, "\u00a0") + "°</span>" +
       '<span class="chip">γυροσκόπιο ' + String(Math.round(sim.heading())).padStart(4, " ") + "°</span>" +
       '<span class="chip">θέση ' + String(Math.round(sim.x)).padStart(4, "\u00a0") + "," + String(Math.round(sim.y)).padStart(4, "\u00a0") + " ·" + String(Math.round(((sim.th * 180 / Math.PI) % 360 + 360) % 360)).padStart(4, "\u00a0") + "°</span>" +
       '<span class="chip">χρόνος ' + (sim.time / 1000).toFixed(1).padStart(5, " ") + " s</span>";
